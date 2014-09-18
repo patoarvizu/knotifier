@@ -7,13 +7,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 import play.Logger;
-
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.handlers.AsyncHandler;
-import com.amazonaws.services.ec2.AmazonEC2AsyncClient;
 import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryRequest;
 import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryResult;
 import com.amazonaws.services.ec2.model.InstanceType;
@@ -25,8 +20,6 @@ public class PriceMonitorImpl implements PriceMonitor
     private final List<InstanceType> instanceTypes = getSpotEligibleInstanceTypes();
     private final String[] availabilityZones = new String[] {"us-east-1a", "us-east-1d"};
     private final Object lock = new Object();
-    private final AWSCredentials credentials = new ProfileCredentialsProvider().getCredentials();
-    private final AmazonEC2AsyncClient ec2ClientAsync = new AmazonEC2AsyncClient(credentials);
 
     @Override
     public Map<InstanceType, SpotPrice> getPrices()
@@ -54,7 +47,6 @@ public class PriceMonitorImpl implements PriceMonitor
                 ec2ClientAsync.describeSpotPriceHistoryAsync(priceHistoryRequest, asyncHandler);
             }
         }
-        printPrices();
     }
 
     private List<InstanceType> getSpotEligibleInstanceTypes()
@@ -111,6 +103,7 @@ public class PriceMonitorImpl implements PriceMonitor
                     }
                 }
             }
+            printPrices();
         }
     }
 }

@@ -1,6 +1,6 @@
 package actors;
 
-public interface AutoScaleModifier
+public interface AutoScaleModifier extends AmazonClientActor
 {
     public void monitorAutoScaleGroups() throws Exception;
 }

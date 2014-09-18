@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
@@ -12,30 +13,21 @@ import play.Logger;
 import play.libs.Akka;
 import scala.concurrent.Future;
 import model.ReplacementInfo;
-import akka.actor.ActorContext;
 import akka.actor.ActorRef;
 import akka.actor.TypedActor;
 import akka.actor.TypedProps;
 import akka.dispatch.OnComplete;
 import akka.util.Timeout;
 
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.profile.ProfileCredentialsProvider;
-import com.amazonaws.services.autoscaling.AmazonAutoScalingAsyncClient;
 import com.amazonaws.services.autoscaling.model.AutoScalingGroup;
 import com.amazonaws.services.autoscaling.model.CreateAutoScalingGroupRequest;
 import com.amazonaws.services.autoscaling.model.CreateLaunchConfigurationRequest;
-import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsRequest;
-import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsResult;
-import com.amazonaws.services.autoscaling.model.DescribeLaunchConfigurationsRequest;
-import com.amazonaws.services.autoscaling.model.DescribeLaunchConfigurationsResult;
 import com.amazonaws.services.autoscaling.model.LaunchConfiguration;
 import com.amazonaws.services.autoscaling.model.Tag;
 import com.amazonaws.services.autoscaling.model.TagDescription;
 import com.amazonaws.services.autoscaling.model.UpdateAutoScalingGroupRequest;
 import com.amazonaws.services.ec2.model.InstanceType;
 import com.amazonaws.services.ec2.model.SpotPrice;
-import com.amazonaws.services.sqs.AmazonSQSAsyncClient;
 import com.amazonaws.services.sqs.model.CreateQueueResult;
 import com.amazonaws.services.sqs.model.Message;
 import com.amazonaws.services.sqs.model.ReceiveMessageRequest;
@@ -45,12 +37,11 @@ import com.amazonaws.util.json.JSONObject;
 public class AutoScaleModifierImpl2 implements AutoScaleModifier
 {
     private static Timeout TIMEOUT = new Timeout(20, TimeUnit.SECONDS);
-    private ActorContext typedActorContext = TypedActor.context();
     private PriceMonitor priceMonitor;
+    private AutoScalingDataMonitor autoScalingDataMonitor;
     private HashMap<String, ReplacementInfo> replacementInfoByGroup = new HashMap<String, ReplacementInfo>();
-    private AWSCredentials credentials = new ProfileCredentialsProvider().getCredentials();
-    private AmazonSQSAsyncClient sqsClient = new AmazonSQSAsyncClient(credentials);
-    private AmazonAutoScalingAsyncClient asClient = new AmazonAutoScalingAsyncClient(credentials);
+    private Map<String, AutoScalingGroup> autoScalingGroups;
+    private Map<String, LaunchConfiguration> launchConfigurations;
 
     public AutoScaleModifierImpl2()
     {
@@ -69,11 +60,38 @@ public class AutoScaleModifierImpl2 implements AutoScaleModifier
                                 PriceMonitorImpl.class), priceMonitorActorRef);
             }
         }, Akka.system().dispatcher());
+        Future<ActorRef> autoScalingDataMonitorFuture = Akka.system()
+                .actorSelection("akka://application/user/autoScalingDataMonitor")
+                .resolveOne(TIMEOUT);
+        autoScalingDataMonitorFuture.onComplete(new OnComplete<ActorRef>()
+        {
+
+            @Override
+            public void onComplete(Throwable e, ActorRef autoScalingDataMonitorRef)
+                    throws Throwable
+            {
+                if(e != null) throw e;
+                autoScalingDataMonitor = TypedActor.get(typedActorContext)
+                        .typedActorOf(
+                                new TypedProps<AutoScalingDataMonitorImpl>(
+                                        AutoScalingDataMonitor.class,
+                                        AutoScalingDataMonitorImpl.class),
+                                autoScalingDataMonitorRef);
+            }
+    
+        }, Akka.system().dispatcher());
     }
 
     @Override
     public void monitorAutoScaleGroups() throws Exception
     {
+        autoScalingGroups = autoScalingDataMonitor.getAutoScaleData();
+        launchConfigurations = autoScalingDataMonitor.getLaunchConfigurationData();
+        if(autoScalingGroups.isEmpty() || launchConfigurations.isEmpty())
+        {
+            Logger.debug("AutoScaling data is not ready yet");
+            return;
+        }
         CreateQueueResult createQueueResult = sqsClient.createQueue("load-balancer-test");
         ReceiveMessageResult sqsMessages = sqsClient.receiveMessage(new ReceiveMessageRequest().withMaxNumberOfMessages(10).withQueueUrl(createQueueResult.getQueueUrl()));
         for(Message sqsMessage : sqsMessages.getMessages())
@@ -81,10 +99,7 @@ public class AutoScaleModifierImpl2 implements AutoScaleModifier
             JSONObject message = new JSONObject(sqsMessage.getBody());
             JSONObject notification = new JSONObject(message.getString("Message"));
             String autoScalingGroupName = notification.getString("AutoScalingGroupName");
-            DescribeAutoScalingGroupsRequest autoScalingGroupsRequest = new DescribeAutoScalingGroupsRequest().withAutoScalingGroupNames(autoScalingGroupName);
-            DescribeAutoScalingGroupsResult autoScalingGroupsResult = asClient.describeAutoScalingGroups(autoScalingGroupsRequest);
-            AutoScalingGroup autoScalingGroup = autoScalingGroupsResult.getAutoScalingGroups().get(0);
-            LaunchConfiguration launchConfiguration = asClient.describeLaunchConfigurations(new DescribeLaunchConfigurationsRequest().withLaunchConfigurationNames(autoScalingGroup.getLaunchConfigurationName())).getLaunchConfigurations().get(0);
+            AutoScalingGroup autoScalingGroup = autoScalingGroups.get(autoScalingGroupName);
             HashMap<String, String> tags = getTagMap(autoScalingGroup.getTags());
             String groupType = tags.get("GroupType");
             if("autoscaling:EC2_INSTANCE_TERMINATE".equals(notification.getString("Event")) && "OnDemand".equals(groupType))
@@ -92,7 +107,7 @@ public class AutoScaleModifierImpl2 implements AutoScaleModifier
                 if(replacementInfoByGroup.containsKey(autoScalingGroupName))
                     replacementInfoByGroup.get(autoScalingGroupName).increaseInstanceCount();
                 else
-                    replacementInfoByGroup.put(autoScalingGroupName, new ReplacementInfo(autoScalingGroup.getLaunchConfigurationName(), autoScalingGroup.getDesiredCapacity()).withAutoScalingGroup(autoScalingGroup).withLaunchConfiguration(launchConfiguration).withTags(tags));
+                    replacementInfoByGroup.put(autoScalingGroupName, new ReplacementInfo(autoScalingGroup.getLaunchConfigurationName(), autoScalingGroup.getDesiredCapacity()).withTags(tags));
             }
             sqsClient.deleteMessage(createQueueResult.getQueueUrl(), sqsMessage.getReceiptHandle());
         }
@@ -102,38 +117,53 @@ public class AutoScaleModifierImpl2 implements AutoScaleModifier
             Logger.debug("Replacements needed for group " + group + ": " + replacementInfo.newInstances);
             Logger.debug("Original capacity for group " + group + ": " + replacementInfo.originalCapacity);
             String newInstanceType = discoverNewInstanceType(replacementInfo.getTagValue("PreferredTypes"));
-            DescribeLaunchConfigurationsResult describeLaunchConfigurations = asClient.describeLaunchConfigurations(new DescribeLaunchConfigurationsRequest().withLaunchConfigurationNames(replacementInfo.launchConfigurationName + "-" + newInstanceType));
-            if(describeLaunchConfigurations.getLaunchConfigurations().isEmpty())
+            synchronized(launchConfigurations)
             {
-                // Create new launch configuration
-                Logger.debug("Create new launch configuration");
-                CreateLaunchConfigurationRequest createLaunchConfigurationRequest = composeNewLaunchConfigurationRequest(replacementInfo.launchConfiguration, newInstanceType, replacementInfo.tags.get("SpotPrice"));
-                asClient.createLaunchConfiguration(createLaunchConfigurationRequest);
+                if(!launchConfigurations.containsKey(replacementInfo.launchConfigurationName + "-" + newInstanceType))
+                {
+                    // Create new launch configuration
+                    Logger.debug("Create new launch configuration");
+                    CreateLaunchConfigurationRequest createLaunchConfigurationRequest = composeNewLaunchConfigurationRequest(launchConfigurations.get(replacementInfo.launchConfigurationName), newInstanceType, replacementInfo.tags.get("SpotPrice"));
+                    asClient.createLaunchConfiguration(createLaunchConfigurationRequest);
+                    autoScalingDataMonitor.updateLaunchConfigurationsData();
+                }
             }
-            DescribeAutoScalingGroupsResult describeAutoScalingGroups = asClient.describeAutoScalingGroups(new DescribeAutoScalingGroupsRequest().withAutoScalingGroupNames(group + "-spot-" + newInstanceType));
-            if(describeAutoScalingGroups.getAutoScalingGroups().isEmpty())
+            synchronized(autoScalingGroups)
             {
-                //Create new auto scaling group
-                Logger.debug("Create new auto scaling group");
-                asClient.createAutoScalingGroup(composeNewAutoScalingGroupRequest(group, newInstanceType, replacementInfo));
+                if(!autoScalingGroups.containsKey(group + "-spot"))
+                {
+                    //Create new auto scaling group
+                    Logger.debug("Create new auto scaling group");
+                    asClient.createAutoScalingGroup(composeNewAutoScalingGroupRequest(group, newInstanceType, replacementInfo));
+                }
+                else
+                {
+                    Logger.debug("Update existing auto scaling group");
+                    asClient.updateAutoScalingGroup(new UpdateAutoScalingGroupRequest()
+                            .withAutoScalingGroupName(
+                                    group + "-spot")
+                            .withLaunchConfigurationName(
+                                    replacementInfo.launchConfigurationName + "-" + newInstanceType)
+                            .withDesiredCapacity(
+                                    autoScalingGroups.get(group + "-spot")
+                                            .getDesiredCapacity()
+                                            + replacementInfo.newInstances));
+                    
+                }
             }
-            else
-            {
-                asClient.updateAutoScalingGroup(new UpdateAutoScalingGroupRequest().withAutoScalingGroupName(group + "-spot-" + newInstanceType).withLaunchConfigurationName(newInstanceTypeLaunchConfigurationName(replacementInfo.launchConfiguration.getLaunchConfigurationName(), newInstanceType)).withDesiredCapacity(replacementInfo.autoScalingGroup.getDesiredCapacity() + replacementInfo.newInstances));
-                Logger.debug("Update existing auto scaling group");
-            }
+            autoScalingDataMonitor.updateAutoScalingGroupsData();
         }
         replacementInfoByGroup.clear();
     }
     
     private CreateAutoScalingGroupRequest composeNewAutoScalingGroupRequest(String group, String newInstanceType, ReplacementInfo replacementInfo)
     {
-        AutoScalingGroup autoScalingGroup = replacementInfo.autoScalingGroup;
+        AutoScalingGroup autoScalingGroup = autoScalingGroups.get(group);
         CreateAutoScalingGroupRequest createAutoScalingGroupRequest = new CreateAutoScalingGroupRequest();
-        createAutoScalingGroupRequest.setAutoScalingGroupName(group + "-spot-" + newInstanceType);
+        createAutoScalingGroupRequest.setAutoScalingGroupName(group + "-spot");
         createAutoScalingGroupRequest.setAvailabilityZones(autoScalingGroup.getAvailabilityZones());
         createAutoScalingGroupRequest.setDefaultCooldown(0);
-        createAutoScalingGroupRequest.setDesiredCapacity(replacementInfo.newInstances + autoScalingGroup.getDesiredCapacity());
+        createAutoScalingGroupRequest.setDesiredCapacity(replacementInfo.newInstances);
         createAutoScalingGroupRequest.setHealthCheckGracePeriod(autoScalingGroup.getHealthCheckGracePeriod());
         createAutoScalingGroupRequest.setHealthCheckType(autoScalingGroup.getHealthCheckType());
         createAutoScalingGroupRequest.setLaunchConfigurationName(newInstanceTypeLaunchConfigurationName(replacementInfo.launchConfigurationName, newInstanceType));

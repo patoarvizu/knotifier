@@ -8,17 +8,13 @@ import java.util.concurrent.TimeUnit;
 import play.Logger;
 import play.libs.Akka;
 import scala.concurrent.Future;
-import akka.actor.ActorContext;
 import akka.actor.ActorRef;
 import akka.actor.TypedActor;
 import akka.actor.TypedProps;
 import akka.dispatch.OnComplete;
 import akka.util.Timeout;
 
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.handlers.AsyncHandler;
-import com.amazonaws.services.autoscaling.AmazonAutoScalingAsyncClient;
 import com.amazonaws.services.autoscaling.model.AutoScalingGroup;
 import com.amazonaws.services.autoscaling.model.CreateLaunchConfigurationRequest;
 import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsRequest;
@@ -30,7 +26,6 @@ import com.amazonaws.services.autoscaling.model.TagDescription;
 import com.amazonaws.services.autoscaling.model.UpdateAutoScalingGroupRequest;
 import com.amazonaws.services.ec2.model.InstanceType;
 import com.amazonaws.services.ec2.model.SpotPrice;
-import com.amazonaws.services.sqs.AmazonSQSAsyncClient;
 import com.amazonaws.services.sqs.model.CreateQueueRequest;
 import com.amazonaws.services.sqs.model.CreateQueueResult;
 import com.amazonaws.services.sqs.model.DeleteMessageRequest;
@@ -45,11 +40,7 @@ public class AutoScaleModifierImpl implements AutoScaleModifier
     private Map<String, Integer> capacities = new HashMap<String, Integer>();
     private Map<InstanceType, SpotPrice> lowestPrices = new HashMap<InstanceType, SpotPrice>();
     private static Timeout TIMEOUT = new Timeout(20, TimeUnit.SECONDS);
-    private ActorContext typedActorContext = TypedActor.context();
     private PriceMonitor priceMonitor;
-    private AWSCredentials credentials = new ProfileCredentialsProvider().getCredentials();
-    private AmazonSQSAsyncClient sqsClient = new AmazonSQSAsyncClient(credentials);
-    private AmazonAutoScalingAsyncClient asClient = new AmazonAutoScalingAsyncClient(credentials);
     
     public AutoScaleModifierImpl()
     {

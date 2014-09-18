@@ -2,14 +2,9 @@ package model;
 
 import java.util.Map;
 
-import com.amazonaws.services.autoscaling.model.AutoScalingGroup;
-import com.amazonaws.services.autoscaling.model.LaunchConfiguration;
-
 public class ReplacementInfo
 {
     public String launchConfigurationName;
-    public LaunchConfiguration launchConfiguration;
-    public AutoScalingGroup autoScalingGroup;
     public int newInstances = 1;
     public int originalCapacity;
     public Map<String, String> tags;
@@ -35,18 +30,6 @@ public class ReplacementInfo
     public ReplacementInfo withOriginalCapatity(Integer originalCapacity)
     {
         this.originalCapacity = originalCapacity;
-        return this;
-    }
-
-    public ReplacementInfo withLaunchConfiguration(LaunchConfiguration launchConfiguration)
-    {
-        this.launchConfiguration = launchConfiguration;
-        return this;
-    }
-
-    public ReplacementInfo withAutoScalingGroup(AutoScalingGroup autoScalingGroup)
-    {
-        this.autoScalingGroup = autoScalingGroup;
         return this;
     }
 
