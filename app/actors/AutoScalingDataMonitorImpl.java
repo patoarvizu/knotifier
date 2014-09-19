@@ -26,8 +26,11 @@ public class AutoScalingDataMonitorImpl implements AutoScalingDataMonitor
         {
             public void onSuccess(DescribeAutoScalingGroupsRequest request, DescribeAutoScalingGroupsResult result)
             {
-                for(AutoScalingGroup autoScalingGroup : result.getAutoScalingGroups())
-                    autoScalingGroups.put(autoScalingGroup.getAutoScalingGroupName(), autoScalingGroup);
+                synchronized (autoScalingGroups)
+                {
+                    for(AutoScalingGroup autoScalingGroup : result.getAutoScalingGroups())
+                        autoScalingGroups.put(autoScalingGroup.getAutoScalingGroupName(), autoScalingGroup);
+                }
             };
         });
         asClient.describeLaunchConfigurationsAsync(new DescribeLaunchConfigurationsRequest(), new BaseAsyncHandler<DescribeLaunchConfigurationsRequest, DescribeLaunchConfigurationsResult>()
@@ -37,8 +40,11 @@ public class AutoScalingDataMonitorImpl implements AutoScalingDataMonitor
             public void onSuccess(DescribeLaunchConfigurationsRequest request,
                     DescribeLaunchConfigurationsResult result)
             {
-                for(LaunchConfiguration launchConfiguration : result.getLaunchConfigurations())
-                    launchConfigurations.put(launchConfiguration.getLaunchConfigurationName(), launchConfiguration);
+                synchronized (launchConfigurations)
+                {
+                    for (LaunchConfiguration launchConfiguration : result.getLaunchConfigurations())
+                        launchConfigurations.put(launchConfiguration.getLaunchConfigurationName(), launchConfiguration);
+                }
             }
         });
     }

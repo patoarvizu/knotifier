@@ -36,10 +36,13 @@ import com.amazonaws.util.json.JSONObject;
 
 public class AutoScaleModifierImpl2 implements AutoScaleModifier
 {
-    private static Timeout TIMEOUT = new Timeout(20, TimeUnit.SECONDS);
+    private static final String SPOT_GROUP_TYPE = "Spot";
+    private static final String ON_DEMAND_GROUP_TYPE = "OnDemand";
+    private static final String AUTOSCALING_INSTANCE_TERMINATE_MESSAGE = "autoscaling:EC2_INSTANCE_TERMINATE";
+    private static Timeout TIMEOUT = new Timeout(5, TimeUnit.SECONDS);
     private PriceMonitor priceMonitor;
     private AutoScalingDataMonitor autoScalingDataMonitor;
-    private HashMap<String, ReplacementInfo> replacementInfoByGroup = new HashMap<String, ReplacementInfo>();
+    private HashMap<String, ReplacementInfo> spotReplacementInfoByGroup = new HashMap<String, ReplacementInfo>();
     private Map<String, AutoScalingGroup> autoScalingGroups;
     private Map<String, LaunchConfiguration> launchConfigurations;
 
@@ -102,18 +105,19 @@ public class AutoScaleModifierImpl2 implements AutoScaleModifier
             AutoScalingGroup autoScalingGroup = autoScalingGroups.get(autoScalingGroupName);
             HashMap<String, String> tags = getTagMap(autoScalingGroup.getTags());
             String groupType = tags.get("GroupType");
-            if("autoscaling:EC2_INSTANCE_TERMINATE".equals(notification.getString("Event")) && "OnDemand".equals(groupType))
+            if(AUTOSCALING_INSTANCE_TERMINATE_MESSAGE.equals(notification.getString("Event")))
             {
-                if(replacementInfoByGroup.containsKey(autoScalingGroupName))
-                    replacementInfoByGroup.get(autoScalingGroupName).increaseInstanceCount();
-                else
-                    replacementInfoByGroup.put(autoScalingGroupName, new ReplacementInfo(autoScalingGroup.getLaunchConfigurationName(), autoScalingGroup.getDesiredCapacity()).withTags(tags));
+                if(ON_DEMAND_GROUP_TYPE.equals(groupType))
+                    if(spotReplacementInfoByGroup.containsKey(autoScalingGroupName))
+                        spotReplacementInfoByGroup.get(autoScalingGroupName).increaseInstanceCount();
+                    else
+                        spotReplacementInfoByGroup.put(autoScalingGroupName, new ReplacementInfo(autoScalingGroup.getLaunchConfigurationName(), autoScalingGroup.getDesiredCapacity()).withTags(tags));
             }
             sqsClient.deleteMessage(createQueueResult.getQueueUrl(), sqsMessage.getReceiptHandle());
         }
-        for(String group : replacementInfoByGroup.keySet())
+        for(String group : spotReplacementInfoByGroup.keySet())
         {
-            ReplacementInfo replacementInfo = replacementInfoByGroup.get(group);
+            ReplacementInfo replacementInfo = spotReplacementInfoByGroup.get(group);
             Logger.debug("Replacements needed for group " + group + ": " + replacementInfo.newInstances);
             Logger.debug("Original capacity for group " + group + ": " + replacementInfo.originalCapacity);
             String newInstanceType = discoverNewInstanceType(replacementInfo.getTagValue("PreferredTypes"));
@@ -151,9 +155,9 @@ public class AutoScaleModifierImpl2 implements AutoScaleModifier
                     
                 }
             }
-            autoScalingDataMonitor.updateAutoScalingGroupsData();
         }
-        replacementInfoByGroup.clear();
+        autoScalingDataMonitor.updateAutoScalingGroupsData();
+        spotReplacementInfoByGroup.clear();
     }
     
     private CreateAutoScalingGroupRequest composeNewAutoScalingGroupRequest(String group, String newInstanceType, ReplacementInfo replacementInfo)
@@ -171,7 +175,7 @@ public class AutoScaleModifierImpl2 implements AutoScaleModifier
         createAutoScalingGroupRequest.setMaxSize(autoScalingGroup.getMaxSize());
         createAutoScalingGroupRequest.setMinSize(autoScalingGroup.getMinSize());
         ArrayList<Tag> tags = new ArrayList<Tag>();
-        tags.add(new Tag().withKey("GroupType").withValue("Spot"));
+        tags.add(new Tag().withKey("GroupType").withValue(SPOT_GROUP_TYPE));
         tags.add(new Tag().withKey("Name").withValue(createAutoScalingGroupRequest.getAutoScalingGroupName()));
         createAutoScalingGroupRequest.setTags(tags);
         return createAutoScalingGroupRequest;

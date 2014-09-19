@@ -9,19 +9,26 @@ public class ReplacementInfo
     public int originalCapacity;
     public Map<String, String> tags;
 
-    public ReplacementInfo(String launchConfigurationName, Integer originalCapacity)
+    public ReplacementInfo()
+    {
+
+    }
+
+    public ReplacementInfo(String launchConfigurationName,
+            Integer originalCapacity)
     {
         this.launchConfigurationName = launchConfigurationName;
         this.originalCapacity = originalCapacity;
     }
-    
+
     public ReplacementInfo withTags(Map<String, String> tags)
     {
         this.tags = tags;
         return this;
     }
-    
-    public ReplacementInfo withLaunchConfigurationName(String launchConfigurationName)
+
+    public ReplacementInfo withLaunchConfigurationName(
+            String launchConfigurationName)
     {
         this.launchConfigurationName = launchConfigurationName;
         return this;
@@ -37,7 +44,7 @@ public class ReplacementInfo
     {
         newInstances++;
     }
-    
+
     public String getTagValue(String key)
     {
         return tags.get(key);

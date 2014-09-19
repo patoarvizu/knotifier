@@ -30,3 +30,8 @@ dist
 /RUNNING_PID
 /.settings
 .cache
+LICENSE
+activator*
+*.log
+project/
+public/
