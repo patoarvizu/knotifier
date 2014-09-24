@@ -18,27 +18,27 @@ public class Global extends GlobalSettings
 {
     public void onStart(Application application)
     {
-        AutoScaleModifier autoScaleModifier = TypedActor.get(Akka.system()).typedActorOf(new TypedProps<AutoScaleModifierImpl2>(AutoScaleModifier.class, AutoScaleModifierImpl2.class), "autoScaleModifier");
         PriceMonitor priceMonitor = TypedActor.get(Akka.system()).typedActorOf(new TypedProps<PriceMonitorImpl>(PriceMonitor.class, PriceMonitorImpl.class), "priceMonitor");
-        AutoScalingDataMonitor autoScalingDataMonitor = TypedActor.get(Akka.system()).typedActorOf(new TypedProps<AutoScalingDataMonitorImpl>(AutoScalingDataMonitor.class, AutoScalingDataMonitorImpl.class), "autoScalingDataMonitor");
-        Akka.system().scheduler().schedule(
-                Duration.create(20, TimeUnit.SECONDS),
-                Duration.create(60, TimeUnit.SECONDS),
-                makeRunnable(autoScaleModifier, "monitorAutoScaleGroups"),
-                Akka.system().dispatcher()
-        );
+//        AutoScaleModifier autoScaleModifier = TypedActor.get(Akka.system()).typedActorOf(new TypedProps<AutoScaleModifierImpl2>(AutoScaleModifier.class, AutoScaleModifierImpl2.class), "autoScaleModifier");
+//        AutoScalingDataMonitor autoScalingDataMonitor = TypedActor.get(Akka.system()).typedActorOf(new TypedProps<AutoScalingDataMonitorImpl>(AutoScalingDataMonitor.class, AutoScalingDataMonitorImpl.class), "autoScalingDataMonitor");
+//        Akka.system().scheduler().schedule(
+//                Duration.create(20, TimeUnit.SECONDS),
+//                Duration.create(60, TimeUnit.SECONDS),
+//                makeRunnable(autoScaleModifier, "monitorAutoScaleGroups"),
+//                Akka.system().dispatcher()
+//        );
         Akka.system().scheduler().schedule(
                 Duration.create(0, TimeUnit.SECONDS),
-                Duration.create(10, TimeUnit.SECONDS),
+                Duration.create(30, TimeUnit.SECONDS),
                 makeRunnable(priceMonitor, "monitorSpotPrices"),
                 Akka.system().dispatcher()
         );
-        Akka.system().scheduler().schedule(
-                Duration.create(0, TimeUnit.SECONDS),
-                Duration.create(10, TimeUnit.SECONDS),
-                makeRunnable(autoScalingDataMonitor, "monitorAutoScalingData"),
-                Akka.system().dispatcher()
-                );
+//        Akka.system().scheduler().schedule(
+//                Duration.create(0, TimeUnit.SECONDS),
+//                Duration.create(10, TimeUnit.SECONDS),
+//                makeRunnable(autoScalingDataMonitor, "monitorAutoScalingData"),
+//                Akka.system().dispatcher()
+//                );
     }
     
     private Runnable makeRunnable(final Object instance, final String methodName)

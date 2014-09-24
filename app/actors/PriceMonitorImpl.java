@@ -1,25 +1,37 @@
 package actors;
 
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Collections;
+import static com.amazonaws.services.ec2.model.InstanceType.C32xlarge;
+import static com.amazonaws.services.ec2.model.InstanceType.C34xlarge;
+import static com.amazonaws.services.ec2.model.InstanceType.C38xlarge;
+import static com.amazonaws.services.ec2.model.InstanceType.C3Large;
+import static com.amazonaws.services.ec2.model.InstanceType.C3Xlarge;
+import static com.amazonaws.services.ec2.model.InstanceType.M32xlarge;
+import static com.amazonaws.services.ec2.model.InstanceType.M3Large;
+import static com.amazonaws.services.ec2.model.InstanceType.M3Medium;
+import static com.amazonaws.services.ec2.model.InstanceType.M3Xlarge;
+
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import model.SpotPriceInfo;
 import play.Logger;
-import com.amazonaws.handlers.AsyncHandler;
-import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryRequest;
-import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryResult;
+import util.WeightedPriceCalculator;
+
 import com.amazonaws.services.ec2.model.InstanceType;
 import com.amazonaws.services.ec2.model.SpotPrice;
 
 public class PriceMonitorImpl implements PriceMonitor
 {
     private HashMap<InstanceType, SpotPrice> lowestPrices = new HashMap<InstanceType, SpotPrice>();
+    private HashMap<InstanceType, SpotPriceInfo> lowestWeightedPrices = new HashMap<InstanceType, SpotPriceInfo>();
     private final List<InstanceType> instanceTypes = getSpotEligibleInstanceTypes();
     private final String[] availabilityZones = new String[] {"us-east-1a", "us-east-1d"};
-    private final Object lock = new Object();
+    private WeightedPriceCalculator weightedPriceCalculator = new WeightedPriceCalculator();
 
     @Override
     public Map<InstanceType, SpotPrice> getPrices()
@@ -30,80 +42,42 @@ public class PriceMonitorImpl implements PriceMonitor
     @Override
     public void monitorSpotPrices()
     {
+        ExecutorService threadPool = Executors.newFixedThreadPool(10);
         for(InstanceType instanceType : instanceTypes)
         {
             for(String availabilityZone : availabilityZones)
             {
-                DescribeSpotPriceHistoryRequest priceHistoryRequest = new DescribeSpotPriceHistoryRequest();
-                priceHistoryRequest.setInstanceTypes(Collections.singleton(instanceType.toString()));
-                Calendar calendar = Calendar.getInstance();
-                priceHistoryRequest.setEndTime(calendar.getTime());
-                calendar.add(Calendar.MINUTE, -5);
-                priceHistoryRequest.setStartTime(calendar.getTime());
-                priceHistoryRequest.setMaxResults(1);
-                priceHistoryRequest.setProductDescriptions(Collections.singleton("Linux/UNIX"));
-                priceHistoryRequest.setAvailabilityZone(availabilityZone);
-                AsyncHandler<DescribeSpotPriceHistoryRequest, DescribeSpotPriceHistoryResult> asyncHandler = new DescribeSpotPriceHistoryAsyncHandler(instanceType);
-                ec2ClientAsync.describeSpotPriceHistoryAsync(priceHistoryRequest, asyncHandler);
+                Runnable weightedPriceCalculationRunnable = getWeightedPriceCalculationRunnable(instanceType, availabilityZone);
+                threadPool.execute(weightedPriceCalculationRunnable);
             }
         }
+        printPrices();
+    }
+    
+    private Runnable getWeightedPriceCalculationRunnable(final InstanceType instanceType, final String availabilityZone)
+    {
+        return new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                weightedPriceCalculator.addWeightedPrice(instanceType, availabilityZone, lowestWeightedPrices);
+            }
+        };
     }
 
     private List<InstanceType> getSpotEligibleInstanceTypes()
     {
-        ArrayList<InstanceType> eligibleInstanceTypes = new ArrayList<InstanceType>();
-        for(InstanceType instanceType : InstanceType.values())
-        {
-            if(!instanceType.toString().equals(InstanceType.T1Micro.toString()))
-                eligibleInstanceTypes.add(instanceType);
-        }
-        return eligibleInstanceTypes;
+        InstanceType[] instanceTypes = { C32xlarge, C34xlarge, C38xlarge, C3Large, C3Xlarge, M32xlarge, M3Large, M3Medium, M3Xlarge };
+        return Arrays.asList(instanceTypes);
     }
 
     private void printPrices()
     {
         Logger.debug(new Date().toString());
         Logger.debug("Unsorted prices:");
-        for(SpotPrice spotPrice : getPrices().values())
-        {
-            Logger.debug(" --- Price for instance type " + spotPrice.getInstanceType() + " in availability zone " + spotPrice.getAvailabilityZone() + " is " + spotPrice.getSpotPrice());
-        }
+        for(SpotPriceInfo spotPrice : lowestWeightedPrices.values())
+            Logger.debug(" --- Price for instance type " + spotPrice.instanceType + " in availability zone " + spotPrice.availabilityZone + " is " + spotPrice.price);
         Logger.debug("----------");
-    }
-
-    private class DescribeSpotPriceHistoryAsyncHandler
-            implements
-            AsyncHandler<DescribeSpotPriceHistoryRequest, DescribeSpotPriceHistoryResult>
-    {
-        private InstanceType instanceType;
-    
-        private DescribeSpotPriceHistoryAsyncHandler(InstanceType instanceType)
-        {
-            this.instanceType = instanceType;
-        }
-    
-        @Override
-        public void onError(Exception e)
-        {
-            Logger.debug(e.getMessage());
-        }
-    
-        @Override
-        public void onSuccess(DescribeSpotPriceHistoryRequest priceHistoryRequest,
-                DescribeSpotPriceHistoryResult spotPriceHistory)
-        {
-            for(SpotPrice spotPrice : spotPriceHistory.getSpotPriceHistory())
-            {
-                synchronized(lock)
-                {
-                    if(!getPrices().containsKey(spotPrice.getInstanceType())
-                           || (Double.valueOf(getPrices().get(instanceType).getSpotPrice()) > Double.valueOf(spotPrice.getSpotPrice())))
-                    {
-                        getPrices().put(instanceType, spotPrice);
-                    }
-                }
-            }
-            printPrices();
-        }
     }
 }
