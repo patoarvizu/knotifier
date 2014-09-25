@@ -12,16 +12,22 @@ import actors.PriceMonitor
 import actors.PriceMonitorImpl
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
+import scala.concurrent.ExecutionContext.Implicits.global
 
 class Global extends GlobalSettings {
 
     override def onStart(app: Application) {
-        implicit val executor: ExecutionContext = Akka.system().dispatcher;
-        val priceMonitor: PriceMonitor = TypedActor(Akka.system()).typedActorOf(TypedProps[PriceMonitorImpl](), "priceMonitor");
-        val autoScalingDataMonitor: AutoScalingDataMonitor = TypedActor(Akka.system()).typedActorOf(TypedProps[AutoScalingDataMonitorImpl](), "autoScalingDataMonitor");
-        val autoScaleModifier: AutoScaleModifier = TypedActor(Akka.system()).typedActorOf(TypedProps[AutoScaleModifierImpl](), "autoScaleModifier");
-    	Akka.system().scheduler.schedule(0.seconds, 10.seconds)({priceMonitor.monitorSpotPrices})
-    	Akka.system().scheduler.schedule(30.seconds, 30.seconds)({autoScaleModifier.monitorAutoScaleGroups});
-    	Akka.system().scheduler.schedule(0.seconds, 10.seconds)({autoScalingDataMonitor.monitorAutoScalingData});
+        val priceMonitor: PriceMonitor = TypedActor(Akka.system()).typedActorOf(TypedProps[PriceMonitorImpl](), "priceMonitor")
+        val autoScalingDataMonitor: AutoScalingDataMonitor = TypedActor(Akka.system()).typedActorOf(TypedProps[AutoScalingDataMonitorImpl](), "autoScalingDataMonitor")
+        val autoScaleModifier: AutoScaleModifier = TypedActor(Akka.system()).typedActorOf(TypedProps[AutoScaleModifierImpl](), "autoScaleModifier")
+    	Akka.system.scheduler.schedule(0.seconds, 10.seconds) {
+    	    priceMonitor.monitorSpotPrices
+	    }
+    	Akka.system.scheduler.schedule(30.seconds, 30.seconds) {
+    	    autoScaleModifier.monitorAutoScaleGroups
+	    }
+    	Akka.system.scheduler.schedule(0.seconds, 10.seconds) {
+    	    autoScalingDataMonitor.monitorAutoScalingData
+	    }
     }
 }
