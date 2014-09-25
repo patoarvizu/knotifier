@@ -19,7 +19,7 @@ class PriceMonitorImpl extends PriceMonitor {
     private final val lowestWeightedPrices: Map[InstanceType, SpotPriceInfo] = new HashMap[InstanceType, SpotPriceInfo]();
     private final val instanceTypes: List[InstanceType] = getSpotEligibleInstanceTypes();
     private final val availabilityZones: Array[String] = Array[String]("us-east-1a", "us-east-1d");
-    private final val weightedPriceCalculator: WeightedPriceCalculator = new WeightedPriceCalculator();
+    implicit private final val weightedPriceCalculator: WeightedPriceCalculator = new WeightedPriceCalculator();
     
 	def getPrices(): ImmutableMap[InstanceType, SpotPriceInfo] = {
 		new ImmutableHashMap() ++ lowestWeightedPrices;
@@ -30,22 +30,24 @@ class PriceMonitorImpl extends PriceMonitor {
         { implicit instanceType: InstanceType =>
             availabilityZones map
             { implicit availabilityZone: String =>
-            	Future {
-                	val weightedPrice: Double = weightedPriceCalculator.getWeightedPrice;
-                	lowestWeightedPrices.synchronized {
-                    	    if(!lowestWeightedPrices.contains(instanceType))
-                    	        lowestWeightedPrices += (instanceType -> new SpotPriceInfo(instanceType, availabilityZone, weightedPrice));
-                    	    else if(lowestWeightedPrices(instanceType).price > weightedPrice)
-                    	    {
-                    	    	val spotPriceInfo: SpotPriceInfo = lowestWeightedPrices(instanceType)
-                    	        spotPriceInfo.setSpotPrice(availabilityZone, weightedPrice);
-                    	    	lowestWeightedPrices += (instanceType -> spotPriceInfo);
-                    	    }
-                	    }
-            	}
+            	Future { setWeightedPrice }
             }
         }
     	printPrices
+    }
+    
+    private[this] def setWeightedPrice(implicit instanceType: InstanceType, availabilityZone: String, weightedPriceCalculator: WeightedPriceCalculator): Unit = {
+        val weightedPrice: Double = weightedPriceCalculator.getWeightedPrice;
+            lowestWeightedPrices.synchronized {
+                    if(!lowestWeightedPrices.contains(instanceType))
+                        lowestWeightedPrices += (instanceType -> new SpotPriceInfo(instanceType, availabilityZone, weightedPrice));
+                    else if(lowestWeightedPrices(instanceType).price > weightedPrice)
+                    {
+                        val spotPriceInfo: SpotPriceInfo = lowestWeightedPrices(instanceType)
+                        spotPriceInfo.setSpotPrice(availabilityZone, weightedPrice);
+                        lowestWeightedPrices += (instanceType -> spotPriceInfo);
+                    }
+                }
     }
     
     private[this] def getSpotEligibleInstanceTypes(): List[InstanceType] =

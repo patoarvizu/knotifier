@@ -24,15 +24,22 @@ import model.SpotPriceInfo
 import play.Logger
 import play.libs.Akka
 import scala.concurrent.duration.FiniteDuration
+import scala.language.postfixOps
 
 class AutoScaleModifierImpl extends AutoScaleModifier {
     
 	private final val SPOT_GROUP_TYPE: String = "Spot";
     private final val ON_DEMAND_GROUP_TYPE: String = "OnDemand";
+    private final val NOTIFICATION_TYPE_FIELD: String = "Event";
+    private final val MESSAGE_FIELD: String = "Message";
+    private final val AUTO_SCALING_GROUP_NAME_FIELD: String = "AutoScalingGroupName";
     private final val AUTOSCALING_INSTANCE_TERMINATE_MESSAGE: String = "autoscaling:EC2_INSTANCE_TERMINATE";
     private final val SPOT_PRICE_TAG: String = "SpotPrice";
     private final val GROUP_TYPE_TAG: String = "GroupType";
+    private final val NAME_TAG: String = "Name";
+    private final val PREFERRED_TYPES_TAG: String = "PreferredTypes";
     private final val SPOT_GROUP_NAME_SUFFIX: String = "-spot";
+    private final val KNOTIFIER_QUEUE_NAME: String = "knotifier-queue"
     private final val TIMEOUT_DURATION: FiniteDuration = 5.seconds;
     private implicit val timeout: Timeout = new Timeout(TIMEOUT_DURATION)
     private val spotReplacementInfoByGroup: HashMap[String, ReplacementInfo] = new HashMap[String, ReplacementInfo]();
@@ -63,7 +70,7 @@ class AutoScaleModifierImpl extends AutoScaleModifier {
 			Logger.debug("AutoScaling data is not ready yet");
 			return;
 		}
-		val queueResult: CreateQueueResult = sqsClient.createQueue("load-balancer-test");
+		val queueResult: CreateQueueResult = sqsClient.createQueue(KNOTIFIER_QUEUE_NAME);
 		val sqsMessages: ReceiveMessageResult = sqsClient.receiveMessage(new ReceiveMessageRequest().withQueueUrl(queueResult.getQueueUrl()));
 		sqsMessages.getMessages() map {sqsMessage => processSQSMessage(sqsMessage)};
 		spotReplacementInfoByGroup.keySet map { group => processReplacementInfo(group) }
@@ -74,31 +81,31 @@ class AutoScaleModifierImpl extends AutoScaleModifier {
 
 	private[this] def processSQSMessage(sqsMessage: Message)(implicit autoScalingGroups: Map[String, AutoScalingGroup]): Unit = {
         val message: JSONObject = new JSONObject(sqsMessage.getBody());
-            val notification: JSONObject = new JSONObject(message.getString("Message"));
-            val autoScalingGroupName: String = notification.getString("AutoScalingGroupName");
-            val autoScalingGroup: AutoScalingGroup = autoScalingGroups.getOrElse(autoScalingGroupName, throw new Exception("Auto-scaling group " + autoScalingGroupName + " doesn't exist"));
-            val tags: Map[String, String] = getTagMap(autoScalingGroup.getTags().toList);
-            tags.keys foreach { tagKey => Logger.debug(tagKey); };
-            val groupType: String = tags.getOrElse("GroupType", null);
-            if(AUTOSCALING_INSTANCE_TERMINATE_MESSAGE equals(notification.getString("Event")))
-            {
-                if(ON_DEMAND_GROUP_TYPE equals(groupType))
-                    if(spotReplacementInfoByGroup.containsKey(autoScalingGroupName))
-                        spotReplacementInfoByGroup.getOrElse(autoScalingGroupName, null).increaseInstanceCount;
-                    else
-                        spotReplacementInfoByGroup.put(autoScalingGroupName, new ReplacementInfo(autoScalingGroup.getLaunchConfigurationName(), autoScalingGroup.getDesiredCapacity(), tags));
-            }
+        val notification: JSONObject = new JSONObject(message.getString(MESSAGE_FIELD));
+        val autoScalingGroupName: String = notification.getString(AUTO_SCALING_GROUP_NAME_FIELD);
+        val autoScalingGroup: AutoScalingGroup = autoScalingGroups.getOrElse(autoScalingGroupName, throw new Exception("Auto-scaling group " + autoScalingGroupName + " doesn't exist"));
+        val tags: Map[String, String] = getTagMap(autoScalingGroup.getTags().toList);
+        tags.keys foreach { tagKey => Logger.debug(tagKey); };
+        val groupType: String = tags.getOrElse(GROUP_TYPE_TAG, null);
+        if(AUTOSCALING_INSTANCE_TERMINATE_MESSAGE equals(notification.getString(NOTIFICATION_TYPE_FIELD)))
+        {
+            if(ON_DEMAND_GROUP_TYPE equals(groupType))
+                if(spotReplacementInfoByGroup.containsKey(autoScalingGroupName)) spotReplacementInfoByGroup.get(autoScalingGroupName).get.increaseInstanceCount;
+                else spotReplacementInfoByGroup.put(autoScalingGroupName, new ReplacementInfo(autoScalingGroup.getLaunchConfigurationName(), autoScalingGroup.getDesiredCapacity(), tags));
+        }
     }
 
 	private[this] def processReplacementInfo(group: String)(implicit autoScalingGroups: Map[String, AutoScalingGroup], launchConfigurations: Map[String, LaunchConfiguration]): Unit = {
 		val replacementInfo: ReplacementInfo = spotReplacementInfoByGroup.getOrElse(group, throw new Exception("Replacement info object doesn't exist"));
         Logger.debug("Replacements needed for group " + group + ": " + replacementInfo.newInstances);
         Logger.debug("Original capacity for group " + group + ": " + replacementInfo.originalCapacity);
-        val newInstanceType: String = discoverNewInstanceType(replacementInfo.getTagValue("PreferredTypes"));
+        val newInstanceType: String = discoverNewInstanceType(replacementInfo.getTagValue(PREFERRED_TYPES_TAG));
         launchConfigurations synchronized {
             if(!launchConfigurations.containsKey(replacementInfo.launchConfigurationName + "-" + newInstanceType))
             {
-                val createLaunchConfigurationRequest: CreateLaunchConfigurationRequest = composeNewLaunchConfigurationRequest(launchConfigurations.getOrElse(replacementInfo.launchConfigurationName, null), newInstanceType, replacementInfo.tags.getOrElse(SPOT_PRICE_TAG, ""));
+                implicit val launchConfiguration: LaunchConfiguration = launchConfigurations.getOrElse(replacementInfo.launchConfigurationName,
+                        throw new Exception("Launch configuration " + replacementInfo.launchConfigurationName + " doesn't exist"));
+                val createLaunchConfigurationRequest: CreateLaunchConfigurationRequest = composeNewLaunchConfigurationRequest(newInstanceType, replacementInfo.tags.getOrElse(SPOT_PRICE_TAG, ""));
                 asClient.createLaunchConfiguration(createLaunchConfigurationRequest);
                 autoScalingDataMonitor.updateLaunchConfigurationsData();
             }
@@ -107,41 +114,36 @@ class AutoScaleModifierImpl extends AutoScaleModifier {
         {
             if(autoScalingGroups.containsKey(group + SPOT_GROUP_NAME_SUFFIX))
             {
-                Logger.debug("Update existing auto scaling group");
-                asClient.updateAutoScalingGroup(new UpdateAutoScalingGroupRequest()
-                .withAutoScalingGroupName(
-                        group + SPOT_GROUP_NAME_SUFFIX)
-                        .withLaunchConfigurationName(
-                                replacementInfo.launchConfigurationName + "-" + newInstanceType)
-                                .withDesiredCapacity(
-                                        autoScalingGroups.getOrElse(group + SPOT_GROUP_NAME_SUFFIX, null)
-                                        .getDesiredCapacity()
-                                        + replacementInfo.newInstances));
+                val autoScalingGroup: AutoScalingGroup = autoScalingGroups.getOrElse(group + SPOT_GROUP_NAME_SUFFIX,
+                        throw new Exception("Auto scaling group " + group + SPOT_GROUP_NAME_SUFFIX + " doesn't exist"));
+                val updateAutoScalingGroupRequest: UpdateAutoScalingGroupRequest = new UpdateAutoScalingGroupRequest();
+                updateAutoScalingGroupRequest.setAutoScalingGroupName(group + SPOT_GROUP_NAME_SUFFIX)
+                updateAutoScalingGroupRequest.setLaunchConfigurationName(replacementInfo.launchConfigurationName + "-" + newInstanceType);
+                updateAutoScalingGroupRequest.setDesiredCapacity(autoScalingGroup.getDesiredCapacity() + replacementInfo.newInstances);
+                asClient.updateAutoScalingGroup(updateAutoScalingGroupRequest);
             }
             else
-            {
-                Logger.debug("Create new auto scaling group");
                 asClient.createAutoScalingGroup(composeNewAutoScalingGroupRequest(group, newInstanceType, replacementInfo, autoScalingGroups));
-            }
         }
 	}
 
 	private[this] def getTagMap(tagDescriptions: List[TagDescription]): Map[String, String] = {
-		tagDescriptions map { tagDescription => tagDescription.getKey() -> tagDescription.getValue()} toMap
+		tagDescriptions map { tagDescription: TagDescription => tagDescription.getKey() -> tagDescription.getValue()} toMap
 	}
 	
 	private[this] def discoverNewInstanceType(preferredTypes: String): String =
     {
         val preferredTypesList: List[String] = preferredTypes.split(",").toList;
-        val lowestPrices: HashMap[InstanceType, SpotPriceInfo] = new HashMap[InstanceType, SpotPriceInfo]();
         if(priceMonitor != null)
-            lowestPrices ++= priceMonitor.getPrices();
-        val sortedPrices: SortedMap[String, InstanceType] =
-        	SortedMap(lowestPrices.entrySet().collect({
-        	case spotInstancePriceEntry: Entry[InstanceType, SpotPriceInfo]
-        	        if (preferredTypesList.contains(spotInstancePriceEntry.getKey().toString())) =>
-        	        	(spotInstancePriceEntry.getValue().instanceType.toString() -> spotInstancePriceEntry.getKey());}).toSeq:_*);
-        sortedPrices.head.toString();
+        {
+            val sortedPrices: SortedMap[String, InstanceType] = SortedMap(priceMonitor.getPrices().entrySet().collect({
+                case spotInstancePriceEntry: Entry[InstanceType, SpotPriceInfo]
+                    if (preferredTypesList.contains(spotInstancePriceEntry.getKey().toString())) =>
+                        (spotInstancePriceEntry.getValue().instanceType.toString() -> spotInstancePriceEntry.getKey());
+            }).toSeq:_*);
+            return sortedPrices.head.toString();
+        }
+        throw new Exception("Couldn't determine new instance type");
     }
 	
 	private[this] def composeNewAutoScalingGroupRequest(group: String, newInstanceType: String, replacementInfo: ReplacementInfo, autoScalingGroups: Map[String, AutoScalingGroup]): CreateAutoScalingGroupRequest =
@@ -159,13 +161,13 @@ class AutoScaleModifierImpl extends AutoScaleModifier {
         createAutoScalingGroupRequest.setMaxSize(autoScalingGroup.getMaxSize());
         createAutoScalingGroupRequest.setMinSize(autoScalingGroup.getMinSize());
         val tags: ArrayList[Tag] = new ArrayList[Tag]();
-        tags.add(new Tag().withKey("GroupType").withValue(SPOT_GROUP_TYPE));
-        tags.add(new Tag().withKey("Name").withValue(createAutoScalingGroupRequest.getAutoScalingGroupName()));
+        tags.add(new Tag().withKey(GROUP_TYPE_TAG).withValue(SPOT_GROUP_TYPE));
+        tags.add(new Tag().withKey(NAME_TAG).withValue(createAutoScalingGroupRequest.getAutoScalingGroupName()));
         createAutoScalingGroupRequest.setTags(tags);
         createAutoScalingGroupRequest;
     }
 	
-	private[this] def composeNewLaunchConfigurationRequest(launchConfiguration: LaunchConfiguration, instanceType: String, spotPrice: String): CreateLaunchConfigurationRequest =
+	private[this] def composeNewLaunchConfigurationRequest(instanceType: String, spotPrice: String)(implicit launchConfiguration: LaunchConfiguration): CreateLaunchConfigurationRequest =
     {
         val createLaunchConfigurationRequest: CreateLaunchConfigurationRequest = new CreateLaunchConfigurationRequest();
         createLaunchConfigurationRequest.setImageId(launchConfiguration.getImageId());

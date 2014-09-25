@@ -20,7 +20,7 @@ class AutoScalingDataMonitorImpl extends AutoScalingDataMonitor {
 		autoScalingGroupsFuture onSuccess {
 			case result: DescribeAutoScalingGroupsResult => {
 				autoScalingGroups.synchronized {
-					result.getAutoScalingGroups() map {autoScalingGroup => autoScalingGroups.put(autoScalingGroup.getAutoScalingGroupName(), autoScalingGroup);};
+					result.getAutoScalingGroups() map {autoScalingGroup => autoScalingGroups += (autoScalingGroup.getAutoScalingGroupName() -> autoScalingGroup);};
 				}
 			}
 		};
@@ -28,7 +28,7 @@ class AutoScalingDataMonitorImpl extends AutoScalingDataMonitor {
 		launchConfigurationsFuture onSuccess {
 		    case result: DescribeLaunchConfigurationsResult => {
 		        launchConfigurations.synchronized {
-		        	result.getLaunchConfigurations() map {launchConfiguration => launchConfigurations.put(launchConfiguration.getLaunchConfigurationName(), launchConfiguration);};
+		        	result.getLaunchConfigurations() map {launchConfiguration => launchConfigurations += (launchConfiguration.getLaunchConfigurationName() -> launchConfiguration);};
 		        }
 		    }
 		};
@@ -36,12 +36,12 @@ class AutoScalingDataMonitorImpl extends AutoScalingDataMonitor {
     
     def updateAutoScalingGroupsData(): Unit = {
     	val autoScalingGroupsResult: DescribeAutoScalingGroupsResult = asClient.describeAutoScalingGroups();
-    	autoScalingGroupsResult.getAutoScalingGroups() map {autoScalingGroup => autoScalingGroups.put(autoScalingGroup.getAutoScalingGroupName(), autoScalingGroup);};
+    	autoScalingGroupsResult.getAutoScalingGroups() map {autoScalingGroup => autoScalingGroups += (autoScalingGroup.getAutoScalingGroupName() -> autoScalingGroup);};
     }
     
     def updateLaunchConfigurationsData(): Unit = {
     	val launchConfigurationsResult: DescribeLaunchConfigurationsResult = asClient.describeLaunchConfigurations();
-    	launchConfigurationsResult.getLaunchConfigurations() map {launchConfiguration => launchConfigurations.put(launchConfiguration.getLaunchConfigurationName(), launchConfiguration);};
+    	launchConfigurationsResult.getLaunchConfigurations() map {launchConfiguration => launchConfigurations += (launchConfiguration.getLaunchConfigurationName() -> launchConfiguration);};
     }
     
     def getAutoScaleData(): ImmutableMap[String, AutoScalingGroup] = { new ImmutableHashMap() ++ autoScalingGroups }
