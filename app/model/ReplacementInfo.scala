@@ -14,6 +14,6 @@ class ReplacementInfo(val launchConfigurationName: String, var newInstances: Int
     }
     
     def getTagValue(key: String): String = {
-    	tags.getOrElse(key, null);
+    	tags.getOrElse(key, throw new Exception("Key " + key + " doesn't exist"));
     }
 }

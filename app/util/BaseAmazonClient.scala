@@ -7,8 +7,8 @@ import com.amazonaws.services.autoscaling.AmazonAutoScalingAsyncClient
 import com.amazonaws.services.ec2.AmazonEC2AsyncClient
 
 trait BaseAmazonClient {
-	val credentials: AWSCredentials = new ProfileCredentialsProvider().getCredentials();
-	val sqsClient: AmazonSQSAsyncClient = new AmazonSQSAsyncClient(credentials);
-	val asClient: AmazonAutoScalingAsyncClient = new AmazonAutoScalingAsyncClient(credentials);
-	val ec2ClientAsync: AmazonEC2AsyncClient = new AmazonEC2AsyncClient(credentials);
+	final val credentials: AWSCredentials = new ProfileCredentialsProvider().getCredentials();
+	final val sqsClient: AmazonSQSAsyncClient = new AmazonSQSAsyncClient(credentials);
+	final val asClient: AmazonAutoScalingAsyncClient = new AmazonAutoScalingAsyncClient(credentials);
+	final val ec2ClientAsync: AmazonEC2AsyncClient = new AmazonEC2AsyncClient(credentials);
 }

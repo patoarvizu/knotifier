@@ -1,6 +1,6 @@
 package actors
 
-import scala.collection.Map
+import scala.collection.immutable.Map
 import com.amazonaws.services.autoscaling.model.AutoScalingGroup
 import com.amazonaws.services.autoscaling.model.LaunchConfiguration
 

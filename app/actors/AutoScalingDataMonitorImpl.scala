@@ -3,6 +3,8 @@ package actors
 import scala.collection.JavaConversions.asScalaBuffer
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.Map
+import scala.collection.immutable.{HashMap => ImmutableHashMap}
+import scala.collection.immutable.{Map => ImmutableMap}
 import scala.concurrent.Future
 
 import com.amazonaws.services.autoscaling.model._
@@ -42,7 +44,7 @@ class AutoScalingDataMonitorImpl extends AutoScalingDataMonitor {
     	launchConfigurationsResult.getLaunchConfigurations() map {launchConfiguration => launchConfigurations.put(launchConfiguration.getLaunchConfigurationName(), launchConfiguration);};
     }
     
-    def getAutoScaleData(): Map[String, AutoScalingGroup] = { autoScalingGroups }
+    def getAutoScaleData(): ImmutableMap[String, AutoScalingGroup] = { new ImmutableHashMap() ++ autoScalingGroups }
     
-    def getLaunchConfigurationData(): Map[String, LaunchConfiguration] = { launchConfigurations }
+    def getLaunchConfigurationData(): ImmutableMap[String, LaunchConfiguration] = { new ImmutableHashMap() ++ launchConfigurations }
 }

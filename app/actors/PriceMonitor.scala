@@ -1,6 +1,6 @@
 package actors
 
-import scala.collection.Map
+import scala.collection.immutable.Map
 import com.amazonaws.services.ec2.model.InstanceType
 import com.amazonaws.services.ec2.model.SpotPrice
 import model.SpotPriceInfo

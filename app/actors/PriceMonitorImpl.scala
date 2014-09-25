@@ -1,17 +1,17 @@
 package actors
 
 import java.util.Date
-
 import scala.collection.mutable.HashMap
+import scala.collection.immutable.{HashMap => ImmutableHashMap}
 import scala.collection.mutable.Map
+import scala.collection.immutable.{Map => ImmutableMap}
 import scala.concurrent.Future
-
 import com.amazonaws.services.ec2.model._
 import com.amazonaws.services.ec2.model.InstanceType._
-
 import model.SpotPriceInfo
 import play.Logger
 import util.WeightedPriceCalculator
+import scala.collection.immutable.AbstractMap
 
 class PriceMonitorImpl extends PriceMonitor {
 
@@ -21,17 +21,17 @@ class PriceMonitorImpl extends PriceMonitor {
     private final val availabilityZones: Array[String] = Array[String]("us-east-1a", "us-east-1d");
     private final val weightedPriceCalculator: WeightedPriceCalculator = new WeightedPriceCalculator();
     
-	def getPrices(): Map[InstanceType, SpotPriceInfo] = {
-		lowestWeightedPrices;
+	def getPrices(): ImmutableMap[InstanceType, SpotPriceInfo] = {
+		new ImmutableHashMap() ++ lowestWeightedPrices;
 	}
     
     def monitorSpotPrices(): Unit = {
     	instanceTypes map
-        { instanceType: InstanceType =>
+        { implicit instanceType: InstanceType =>
             availabilityZones map
-            { availabilityZone: String =>
+            { implicit availabilityZone: String =>
             	Future {
-                	val weightedPrice: Double = weightedPriceCalculator.getWeightedPrice(instanceType, availabilityZone);
+                	val weightedPrice: Double = weightedPriceCalculator.getWeightedPrice;
                 	lowestWeightedPrices.synchronized {
                     	    if(!lowestWeightedPrices.contains(instanceType))
                     	        lowestWeightedPrices += (instanceType -> new SpotPriceInfo(instanceType, availabilityZone, weightedPrice));
@@ -56,7 +56,6 @@ class PriceMonitorImpl extends PriceMonitor {
     private[this] def printPrices(): Unit =
     {
         Logger.debug(new Date().toString());
-        Logger.debug("Unsorted prices:");
         lowestWeightedPrices.values map { spotPrice: SpotPriceInfo =>
             Logger.debug(" --- Price for instance type " + spotPrice.instanceType + " in availability zone " + spotPrice.availabilityZone + " is " + spotPrice.price);
         }

@@ -16,10 +16,11 @@ import scala.concurrent.ExecutionContext
 import play.libs.Akka
 import scala.concurrent.ExecutionContext.Implicits.global
 import play.Logger
+import scala.annotation.tailrec
 
 class WeightedPriceCalculator extends BaseAmazonClient {
 	
-	def getWeightedPrice(instanceType: InstanceType, availabilityZone: String): Double = {
+	def getWeightedPrice(implicit instanceType: InstanceType, availabilityZone: String): Double = {
 		val currentPrice: Double = getCurrentPrice(instanceType, availabilityZone);
 		val lastDayAverage: Double = getLastDayAverage(instanceType, availabilityZone);
 		val threeMonthAverage: Double = getThreeMonthAverage(instanceType, availabilityZone);
@@ -37,7 +38,7 @@ class WeightedPriceCalculator extends BaseAmazonClient {
     private[this] def getThreeMonthAverage(instanceType: InstanceType, availabilityZone: String): Double = {
         getAveragePrice(instanceType, availabilityZone, Calendar.MONTH, 3);
     };
-    
+
     private[this] def getAveragePrice(instanceType: InstanceType, availabilityZone: String, calendarField: Int, period: Int): Double = {
     	val priceHistoryRequest: DescribeSpotPriceHistoryRequest = new DescribeSpotPriceHistoryRequest;
     	priceHistoryRequest.setInstanceTypes(Collections.singleton(instanceType.toString()));
@@ -50,7 +51,7 @@ class WeightedPriceCalculator extends BaseAmazonClient {
     	getAverageRecursive(0.0, 0, priceHistoryRequest);
     }
 
-    private[this] def getAverageRecursive(accumulatedSum: Double, numberOfResults: Int, priceHistoryRequest: DescribeSpotPriceHistoryRequest): Double = {
+    @tailrec private[this] def getAverageRecursive(accumulatedSum: Double, numberOfResults: Int, priceHistoryRequest: DescribeSpotPriceHistoryRequest): Double = {
     	val spotPriceHistory: DescribeSpotPriceHistoryResult = ec2ClientAsync.describeSpotPriceHistory(priceHistoryRequest);
     	val sumOfThis: Double = spotPriceHistory.getSpotPriceHistory().foldLeft(0.0){(sum: Double, spotPrice: SpotPrice) => sum + spotPrice.getSpotPrice().toDouble}
     	val accumulatedSumThis: Double = accumulatedSum + sumOfThis;
@@ -61,7 +62,7 @@ class WeightedPriceCalculator extends BaseAmazonClient {
     	}
     	else
     	{
-    		priceHistoryRequest.setNextToken(spotPriceHistory.getNextToken())
+    		priceHistoryRequest.setNextToken(spotPriceHistory.getNextToken());
     		getAverageRecursive(accumulatedSumThis, numberOfResultsThis, priceHistoryRequest);
     	}
     }
