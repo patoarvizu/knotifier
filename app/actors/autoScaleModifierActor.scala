@@ -78,14 +78,14 @@ object AutoScaleModifier extends AmazonClient {
         val tags: Map[String, String] = getTagMap(autoScalingGroup.getTags)
         if(AutoScalingInstanceTerminateMessage == notification.getString(NotificationTypeField))
         {
-            if(tags.get(GroupTypeTag) == Some(OnDemandGroupType)) {
+            if(tags.get(GroupTypeTag) == Some(SpotGroupType)) {
                 spotReplacementInfoByGroup.get(autoScalingGroupName) match {
                     case Some(spotReplacementInfo) => {
                         spotReplacementInfoByGroup.put(autoScalingGroupName, spotReplacementInfo.increaseInstanceCount)
                     }
                     case None =>  
                         spotReplacementInfoByGroup.put(autoScalingGroupName, 
-                            ReplacementInfo(launchConfigurationName=autoScalingGroup.getLaunchConfigurationName, originalCapacity=autoScalingGroup.getDesiredCapacity(), tags=tags))
+                            ReplacementInfo(baseLaunchConfigurationName=autoScalingGroupName, originalCapacity=autoScalingGroup.getDesiredCapacity(), tags=tags))
                 }
             }
         }
@@ -98,21 +98,21 @@ object AutoScaleModifier extends AmazonClient {
         Logger.debug(s"Original capacity for group $group: ${replacementInfo.originalCapacity}")
         val newInstanceType: String = discoverNewInstanceType(replacementInfo.getTagValue(PreferredTypesTag))
         
-        if(!launchConfigurations.containsKey(s"${replacementInfo.launchConfigurationName}-$newInstanceType"))
+        if(!launchConfigurations.containsKey(s"${replacementInfo.baseLaunchConfigurationName}-$newInstanceType"))
         {
-            implicit val launchConfiguration: LaunchConfiguration = launchConfigurations.getOrElse(replacementInfo.launchConfigurationName,
-                    throw new Exception(s"Launch configuration ${replacementInfo.launchConfigurationName} doesn't exist"))
+            implicit val launchConfiguration: LaunchConfiguration = launchConfigurations.getOrElse(replacementInfo.baseLaunchConfigurationName,
+                    throw new Exception(s"Launch configuration ${replacementInfo.baseLaunchConfigurationName} doesn't exist"))
             val createLaunchConfigurationRequest: CreateLaunchConfigurationRequest = composeNewLaunchConfigurationRequest(newInstanceType, replacementInfo.tags.getOrElse(SpotPriceTag, ""))
             asClient.createLaunchConfiguration(createLaunchConfigurationRequest)
             updateLaunchConfigurationsData
         }
-        if(autoScalingGroups.containsKey(group + SpotGroupNameSuffix))
+        if(autoScalingGroups.containsKey(group))
         {
-            val autoScalingGroup: AutoScalingGroup = autoScalingGroups.getOrElse(group + SpotGroupNameSuffix,
-                    throw new Exception(s"Auto scaling group $group$SpotGroupNameSuffix doesn't exist"))
+            val autoScalingGroup: AutoScalingGroup = autoScalingGroups.getOrElse(group,
+                    throw new Exception(s"Auto scaling group $group doesn't exist"))
             val updateAutoScalingGroupRequest: UpdateAutoScalingGroupRequest = new UpdateAutoScalingGroupRequest
-            updateAutoScalingGroupRequest.setAutoScalingGroupName(group + SpotGroupNameSuffix)
-            updateAutoScalingGroupRequest.setLaunchConfigurationName(s"${replacementInfo.launchConfigurationName}-$newInstanceType")
+            updateAutoScalingGroupRequest.setAutoScalingGroupName(group)
+            updateAutoScalingGroupRequest.setLaunchConfigurationName(s"${replacementInfo.baseLaunchConfigurationName}-$newInstanceType")
             updateAutoScalingGroupRequest.setDesiredCapacity(autoScalingGroup.getDesiredCapacity() + replacementInfo.getInstanceCount)
             asClient.updateAutoScalingGroup(updateAutoScalingGroupRequest)
         }
@@ -140,13 +140,13 @@ object AutoScaleModifier extends AmazonClient {
         val autoScalingGroup: AutoScalingGroup = autoScalingGroups.getOrElse(group,
                 throw new RuntimeException(s"Auto scaling group $group was not found"))
         val createAutoScalingGroupRequest: CreateAutoScalingGroupRequest = new CreateAutoScalingGroupRequest
-        createAutoScalingGroupRequest.setAutoScalingGroupName(group + SpotGroupNameSuffix)
+        createAutoScalingGroupRequest.setAutoScalingGroupName(group)
         createAutoScalingGroupRequest.setAvailabilityZones(autoScalingGroup.getAvailabilityZones)
         createAutoScalingGroupRequest.setDefaultCooldown(0)
         createAutoScalingGroupRequest.setDesiredCapacity(replacementInfo.getInstanceCount)
         createAutoScalingGroupRequest.setHealthCheckGracePeriod(autoScalingGroup.getHealthCheckGracePeriod)
         createAutoScalingGroupRequest.setHealthCheckType(autoScalingGroup.getHealthCheckType)
-        createAutoScalingGroupRequest.setLaunchConfigurationName(newInstanceTypeLaunchConfigurationName(replacementInfo.launchConfigurationName, newInstanceType))
+        createAutoScalingGroupRequest.setLaunchConfigurationName(newInstanceTypeLaunchConfigurationName(replacementInfo.baseLaunchConfigurationName, newInstanceType))
         createAutoScalingGroupRequest.setLoadBalancerNames(autoScalingGroup.getLoadBalancerNames)
         createAutoScalingGroupRequest.setMaxSize(autoScalingGroup.getMaxSize)
         createAutoScalingGroupRequest.setMinSize(autoScalingGroup.getMinSize)
