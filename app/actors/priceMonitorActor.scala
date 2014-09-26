@@ -18,20 +18,12 @@ import scala.collection.immutable.AbstractMap
 import util.AmazonClient
 import scala.concurrent.ExecutionContext.Implicits.global
 
-trait PriceMonitor extends Actor with AmazonClient {
-
-    def getWeightedPrices: ImmutableMap[InstanceType, SpotPriceInfo]
-    
-    def monitorSpotPrices
-}
-
-class PriceMonitorImpl extends PriceMonitor {
+object PriceMonitor extends AmazonClient {
 
     private final val lowestPrices: Map[InstanceType, SpotPrice] = new HashMap[InstanceType, SpotPrice]
     private final val lowestWeightedPrices: Map[InstanceType, SpotPriceInfo] = new HashMap[InstanceType, SpotPriceInfo]
     private final val instanceTypes: Set[InstanceType] = Set(C32xlarge, C34xlarge, C38xlarge, C3Large, C3Xlarge, M32xlarge, M3Large, M3Medium, M3Xlarge)
     private final val availabilityZones: Set[String] = Set("us-east-1a", "us-east-1d")
-     private final val weightedPriceCalculator: WeightedPriceCalculator = new WeightedPriceCalculator
     
     def getWeightedPrices = lowestWeightedPrices.toMap
     
@@ -42,12 +34,10 @@ class PriceMonitorImpl extends PriceMonitor {
         } {
             Future { setWeightedPrice(instanceType, availabilityZone) }
         }
-
-        printPrices
     }
     
     private[this] def setWeightedPrice(instanceType: InstanceType, availabilityZone: String) = {
-        val weightedPrice: Double = weightedPriceCalculator.getWeightedPrice(instanceType, availabilityZone)
+        val weightedPrice: Double = WeightedPriceCalculator.getWeightedPrice(instanceType, availabilityZone)
             lowestWeightedPrices.synchronized {
                     if(!lowestWeightedPrices.contains(instanceType))
                         lowestWeightedPrices(instanceType) = SpotPriceInfo(instanceType, availabilityZone, weightedPrice)

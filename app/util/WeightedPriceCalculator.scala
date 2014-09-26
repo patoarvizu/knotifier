@@ -18,7 +18,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import play.Logger
 import scala.annotation.tailrec
 
-class WeightedPriceCalculator extends AmazonClient {
+object WeightedPriceCalculator extends AmazonClient {
 
     private final val LinuxProductDescription: String = "Linux/UNIX"
 
@@ -46,7 +46,6 @@ class WeightedPriceCalculator extends AmazonClient {
 	}
 
 	def getCurrentPrice(instanceType: InstanceType, availabilityZone: String) = getAveragePrice(instanceType, availabilityZone, Calendar.MINUTE, 1)
-
 
 	private[this] def getLastDayAverage(instanceType: InstanceType, availabilityZone: String) = getAveragePrice(instanceType, availabilityZone, Calendar.HOUR, 24)
 
