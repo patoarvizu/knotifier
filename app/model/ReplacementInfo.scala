@@ -4,14 +4,10 @@ import scala.collection.Map
 import scala.collection.mutable.HashMap
 
 case class ReplacementInfo(
-        baseLaunchConfigurationName: String,
+        baseSpotGroupName: String,
         newInstances: Int = 1,
         originalCapacity: Int,
         tags: Map[String, String]) {
-
-    def increaseInstanceCount: ReplacementInfo = {
-        ReplacementInfo(baseLaunchConfigurationName, newInstances + 1, originalCapacity, tags)
-    }
     
     def getTagValue(key: String): String = {
     	tags.getOrElse(key, throw new Exception(s"Key $key doesn't exist"))
