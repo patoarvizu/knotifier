@@ -15,14 +15,19 @@ import scala.concurrent.Future
 class Global extends GlobalSettings {
 
     override def onStart(app: Application) {
-        Akka.system.scheduler.schedule(0.seconds, 30.seconds) {
-            Future { PriceMonitor.monitorSpotPrices }
-        }
         Akka.system.scheduler.schedule(30.seconds, 30.seconds) {
-            Future { AutoScaleModifier.monitorAutoScaleGroups } 
+            makeFuture(AutoScaleModifier.monitorAutoScaleGroups)
         }
         Akka.system.scheduler.schedule(0.seconds, 30.seconds) {
-            Future { AutoScalingDataMonitor.monitorAutoScalingData }
+            makeFuture(PriceMonitor.monitorSpotPrices)
         }
+        Akka.system.scheduler.schedule(0.seconds, 30.seconds) {
+            makeFuture(AutoScalingDataMonitor.monitorAutoScalingData)
+        }
+    }
+
+    private[this] def makeFuture(action: Unit): Unit = {
+        val rethrowException: PartialFunction[Throwable, Unit] = { case e => throw e }
+        Future { action } onFailure rethrowException
     }
 }
