@@ -6,29 +6,43 @@ import com.amazonaws.services.autoscaling.model.AutoScalingGroup
 import com.amazonaws.services.autoscaling.model.TagDescription
 import scala.collection.JavaConversions._
 import actors.AutoScaleModifier
+import actors.AutoScalingDataMonitor._
 import scala.language.postfixOps
+import actors.AutoScalingDataMonitor
 
 case class ReplacementInfo(
         spotGroupName: String,
         autoScalingGroup: AutoScalingGroup,
         newInstances: Int = 1) {
 
+    private final val BaseSpotGroupNameTag: String = "BaseSpotGroupName"
+    private final val SystemTag: String = "System"
+    private final val LaunchConfigurationSuffix: String = "ASLaunchConfigurationSpot"
+    private final val AutoScaleGroupSuffix: String = "ASScalingGroupSpot"
+
     private val tags: Map[String, String] = {
-        val tagDescriptions: Iterable[TagDescription] = autoScalingGroup.getTags
-        tagDescriptions map { tagDescription => tagDescription.getKey -> tagDescription.getValue} toMap
+        autoScalingGroup.getTags map { tagDescription => tagDescription.getKey -> tagDescription.getValue} toMap
     }
 
-    val originalCapacity: Int = autoScalingGroup.getDesiredCapacity
+    val baseSpotGroupName: String = {
+        getBaseName(AutoScaleGroupSuffix)
+    }
+
+    val baseLaunchConfigurationName: String = {
+        getBaseName(LaunchConfigurationSuffix)
+    }
 
     def getTagValue(key: String): String = {
         tags.getOrElse(key, throw new RuntimeException(s"Key $key doesn't exist"))
     }
-    
+
     def instanceCount: Int = {
         newInstances;
     }
 
-    def baseSpotGroupName: String = {
-        tags.getOrElse(AutoScaleModifier.BaseSpotGroupNameTag, throw new RuntimeException(s"${AutoScaleModifier.BaseSpotGroupNameTag} tag is missing"))
+    private[this] def getBaseName(suffix: String): String = {
+        val stackName: String = tags.getOrElse(StackNameTag, throw new RuntimeException(s"$StackNameTag tag is missing"))
+        val system: String = tags.getOrElse(SystemTag, throw new RuntimeException(s"$SystemTag tag is missing"))
+        s"$stackName-$system$suffix"
     }
 }

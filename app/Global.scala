@@ -15,13 +15,16 @@ import scala.concurrent.Future
 class Global extends GlobalSettings {
 
     override def onStart(app: Application) {
-        Akka.system.scheduler.schedule(30.seconds, 30.seconds) {
+        Akka.system.scheduler.schedule(0.seconds, 10.seconds) {
             makeFuture(AutoScaleModifier.monitorAutoScaleGroups)
         }
-        Akka.system.scheduler.schedule(0.seconds, 30.seconds) {
+        Akka.system.scheduler.schedule(0.seconds, 60.seconds) {
             makeFuture(PriceMonitor.monitorSpotPrices)
         }
-        Akka.system.scheduler.schedule(0.seconds, 30.seconds) {
+        Akka.system.scheduler.schedule(0.seconds, 15.seconds) {
+            makeFuture(PriceMonitor.printPrices)
+        }
+        Akka.system.scheduler.schedule(0.seconds, 60.seconds) {
             makeFuture(AutoScalingDataMonitor.monitorAutoScalingData)
         }
     }
