@@ -29,6 +29,7 @@ import model.SpotPriceInfo
 import play.Logger
 import util.AmazonClient
 import scala.util.matching.Regex
+import util.NameHelper._
 
 object AutoScaleModifier extends AmazonClient {
 
@@ -37,9 +38,7 @@ object AutoScaleModifier extends AmazonClient {
     private final val MessageField: String = "Message"
     private final val AutoScalingGroupIdField: String = "AutoScalingGroupName"
     private final val AutoScalingInstanceTerminateMessage: String = "autoscaling:EC2_INSTANCE_TERMINATE"
-    private final val SpotPriceTag: String = "SpotPrice"
     private final val GroupTypeTag: String = "GroupType"
-    private final val PreferredTypesTag: String = "PreferredTypes"
     private final val KnotifierQueueName: String = "knotifier-queue"
 
     private val spotReplacementInfoByGroup: HashMap[String, ReplacementInfo] = HashMap[String, ReplacementInfo]()
@@ -88,16 +87,16 @@ object AutoScaleModifier extends AmazonClient {
         val baseLaunchConfigurationName: String = replacementInfo.baseLaunchConfigurationName
         val newInstanceInfo: SpotPriceInfo = discoverNewInstanceInfo(replacementInfo.getTagValue(PreferredTypesTag))
         
-        if(!launchConfigurations.containsKey(s"$baseLaunchConfigurationName-${newInstanceInfo.instanceType}"))
+        if(!launchConfigurations.containsKey(getLaunchConfigurationNameWithInstanceType(baseLaunchConfigurationName, s"${newInstanceInfo.instanceType}")))
         {
             val launchConfiguration: LaunchConfiguration = launchConfigurations.getOrElse(baseLaunchConfigurationName,
                     throw new RuntimeException(s"Launch configuration $baseLaunchConfigurationName wasn't found"))
-            val createLaunchConfigurationRequest: CreateLaunchConfigurationRequest = composeNewLaunchConfigurationRequest(newInstanceInfo.instanceType.toString, replacementInfo, launchConfiguration)
+            val createLaunchConfigurationRequest: CreateLaunchConfigurationRequest = composeNewLaunchConfigurationRequest(newInstanceInfo.instanceType, replacementInfo, launchConfiguration)
             asClient.createLaunchConfiguration(createLaunchConfigurationRequest)
         }
-        if(autoScalingGroups.containsKey(s"$baseSpotGroupName-${newInstanceInfo.availabilityZone}"))
+        if(autoScalingGroups.containsKey(getAutoScalingGroupNameWithAvailabilityZone(baseSpotGroupName, newInstanceInfo.availabilityZone)))
         {
-            val autoScalingGroup: AutoScalingGroup = autoScalingGroups.get(s"$baseSpotGroupName-${newInstanceInfo.availabilityZone}").get
+            val autoScalingGroup: AutoScalingGroup = autoScalingGroups.get(getAutoScalingGroupNameWithAvailabilityZone(baseSpotGroupName, newInstanceInfo.availabilityZone)).get
             val updateAutoScalingGroupRequest: UpdateAutoScalingGroupRequest = new UpdateAutoScalingGroupRequest
             updateAutoScalingGroupRequest.setAutoScalingGroupName(autoScalingGroup.getAutoScalingGroupName)
             updateAutoScalingGroupRequest.setLaunchConfigurationName(s"$baseLaunchConfigurationName-${newInstanceInfo.instanceType}")
@@ -106,7 +105,7 @@ object AutoScaleModifier extends AmazonClient {
             updateSingleAutoScalingGroup(s"$baseSpotGroupName-${newInstanceInfo.availabilityZone}")
         }
         else
-            throw new RuntimeException(s"Auto scaling group $baseSpotGroupName-${newInstanceInfo.availabilityZone} wasn't found")
+            throw new RuntimeException(s"Auto scaling group ${getAutoScalingGroupNameWithAvailabilityZone(baseSpotGroupName, newInstanceInfo.availabilityZone)} wasn't found")
         if(autoScalingGroups.containsKey(spotGroupName))
         {
             val autoScalingGroup: AutoScalingGroup = autoScalingGroups.get(spotGroupName).get
@@ -131,16 +130,16 @@ object AutoScaleModifier extends AmazonClient {
         }).toSeq:_*).head._2
     }
 
-    private[this] def composeNewLaunchConfigurationRequest(instanceType: String, replacementInfo: ReplacementInfo, launchConfiguration: LaunchConfiguration): CreateLaunchConfigurationRequest =
+    private[this] def composeNewLaunchConfigurationRequest(instanceType: InstanceType, replacementInfo: ReplacementInfo, launchConfiguration: LaunchConfiguration): CreateLaunchConfigurationRequest =
     {
         val createLaunchConfigurationRequest: CreateLaunchConfigurationRequest = new CreateLaunchConfigurationRequest
         createLaunchConfigurationRequest.setImageId(launchConfiguration.getImageId)
         createLaunchConfigurationRequest.setKeyName(launchConfiguration.getKeyName)
         createLaunchConfigurationRequest.setSecurityGroups(launchConfiguration.getSecurityGroups)
         createLaunchConfigurationRequest.setUserData(launchConfiguration.getUserData)
-        createLaunchConfigurationRequest.setInstanceType(instanceType)
+        createLaunchConfigurationRequest.setInstanceType(s"$instanceType")
         createLaunchConfigurationRequest.setSpotPrice(replacementInfo.getTagValue(SpotPriceTag))
-        createLaunchConfigurationRequest.setLaunchConfigurationName(s"${replacementInfo.baseLaunchConfigurationName}-$instanceType")
+        createLaunchConfigurationRequest.setLaunchConfigurationName(getLaunchConfigurationNameWithInstanceType(replacementInfo.baseLaunchConfigurationName, s"$instanceType"))
         createLaunchConfigurationRequest
     }
 }

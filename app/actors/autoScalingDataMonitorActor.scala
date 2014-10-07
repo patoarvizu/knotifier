@@ -10,19 +10,11 @@ import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsResult
 import com.amazonaws.services.autoscaling.model.DescribeLaunchConfigurationsResult
 import util.AmazonClient
 import scala.concurrent.ExecutionContext.Implicits.global
-import play.Logger
-import com.amazonaws.services.autoscaling.model.TagDescription
-import scala.util.matching.Regex
-import scala.util.matching.Regex.Match
 import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsRequest
 import com.amazonaws.services.autoscaling.model.DescribeLaunchConfigurationsRequest
+import util.NameHelper._
 
 object AutoScalingDataMonitor extends AmazonClient {
-
-    private final val SystemTag: String = "System";
-    final val StackNameTag: String = "aws:cloudformation:stack-name"
-    private final val AvailabilityZone: String = "AvailabilityZone"
-    private final val AutoScaleGroupSuffix: String = "ASScalingGroupSpot"
 
     val autoScalingGroups: Map[String, AutoScalingGroup] = new TrieMap[String, AutoScalingGroup];
     val launchConfigurations: Map[String, LaunchConfiguration] = new TrieMap[String, LaunchConfiguration]
@@ -68,21 +60,6 @@ object AutoScalingDataMonitor extends AmazonClient {
         launchConfigurationsResult.getLaunchConfigurations foreach putLaunchConfigurationInMap
     }
 
-    def getAutoScalingGroupsMapIndex(autoScalingGroup: AutoScalingGroup): String = {
-        val tags: Iterable[TagDescription] = autoScalingGroup.getTags
-                val stackName: String = getTagValue(tags, StackNameTag)
-                val system: String = getTagValue(tags, SystemTag)
-                val availabilityZone: String = getTagValue(tags, AvailabilityZone)
-                if(stackName.isEmpty || system.isEmpty || availabilityZone.isEmpty)
-                    stripARNid(autoScalingGroup.getAutoScalingGroupName)
-                    else
-                        s"$stackName-$system$AutoScaleGroupSuffix-$availabilityZone"
-    }
-
-    private[this] def getLaunchConfigurationsMapIndex(launchConfiguration: LaunchConfiguration): String = {
-        stripARNid(launchConfiguration.getLaunchConfigurationName);
-    }
-
     private[this] def putAutoScalingGroupInMap(autoScalingGroup: AutoScalingGroup) = {
         val mapIndex = getAutoScalingGroupsMapIndex(autoScalingGroup)
         autoScalingGroups(mapIndex) = autoScalingGroup
@@ -105,21 +82,5 @@ object AutoScalingDataMonitor extends AmazonClient {
             else
                 throw new RuntimeException(s"Auto scaling group $awsName could not be found")
         })
-    }
-
-    private[this] def getTagValue(tags: Iterable[TagDescription], tagKey: String): String = {
-        val tagDescription: Option[TagDescription] = (tags find({tagDescription: TagDescription => tagDescription.getKey == tagKey }))
-        tagDescription match {
-            case Some(tagDescription) => tagDescription.getValue()
-            case None => ""
-        }
-    }
-
-    private[this] def stripARNid(name: String): String = {
-        val idRegex = new Regex("""(.*)(-[0-9A-Z]{12,13})$""", "name", "ARNid")
-        idRegex findFirstMatchIn name match {
-            case Some(matched) => matched.group("name")
-            case None => name
-        }
     }
 }
