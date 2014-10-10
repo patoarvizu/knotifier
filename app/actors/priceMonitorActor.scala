@@ -16,6 +16,7 @@ import play.Logger
 import util.WeightedPriceCalculator
 import util.AmazonClient
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.collection.mutable.StringBuilder
 
 object PriceMonitor extends AmazonClient {
 
@@ -47,10 +48,12 @@ object PriceMonitor extends AmazonClient {
 
     def printPrices =
     {
-        Logger.debug(new Date().toString)
+        val pricesStringBuilder:StringBuilder = new StringBuilder
+        pricesStringBuilder.append(s"\n${new Date().toString}\n")
         lowestWeightedPrices.values foreach { spotPrice: SpotPriceInfo =>
-            Logger.debug(" --- Price for instance type " + spotPrice.instanceType + " in availability zone " + spotPrice.availabilityZone + " is " + spotPrice.price)
+            pricesStringBuilder.append(s" --- Price for instance type ${spotPrice.instanceType} in availability zone ${spotPrice.availabilityZone} is ${spotPrice.price}\n")
         }
-        Logger.debug("----------")
+        pricesStringBuilder.append("----------")
+        Logger.info(pricesStringBuilder.mkString)
     }
 }

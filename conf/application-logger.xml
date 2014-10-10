@@ -1,0 +1,44 @@
+<configuration>
+    <turboFilter class="ch.qos.logback.classic.turbo.DuplicateMessageFilter"/>
+
+    <appender name="SYSLOG" class="ch.qos.logback.classic.net.SyslogAppender">
+        <facility>USER</facility>
+        <param name="suffixPattern"
+               value="%d [%thread] %-5level %logger{15} - %n%message%n%xException%n"/>
+        <param name="SyslogHost" value="logs.papertrailapp.com"/>
+        <param name="Port" value="60313"/>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${application.home}/logs/application.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- rollover daily -->
+            <fileNamePattern>${application.home}/logs/application-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxHistory>10</maxHistory>
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <!-- or whenever the file size reaches 100MB -->
+                <maxFileSize>100MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d [%thread] %-5level %logger{15} - %n%message%n%xException%n</pattern>
+        </encoder>
+    </appender>
+    
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%level - %message%n%xException{5}
+            </pattern>
+        </encoder>
+    </appender>
+
+    <logger name="play" level="INFO"/>
+    <logger name="application" level="INFO"/>
+    <logger name="akka.event.slf4j.Slf4jLogger" level="INFO"/>
+    <root level="DEBUG">
+        <appender-ref ref="FILE"/>
+        <appender-ref ref="SYSLOG"/>
+        <appender-ref ref="STDOUT"/>
+    </root>
+
+</configuration>

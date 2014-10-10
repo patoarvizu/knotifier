@@ -1,36 +1,41 @@
-import play.GlobalSettings
-import play.Application
-import play.Logger
+import play.api.GlobalSettings
+import play.api.Application
 import actors.AutoScaleModifier
-import akka.actor.TypedActor
 import play.libs.Akka
-import akka.actor.TypedProps
 import actors.AutoScalingDataMonitor
 import actors.PriceMonitor
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import play.Logger
 
-class Global extends GlobalSettings {
+object Global extends GlobalSettings {
 
     override def onStart(app: Application) {
         Akka.system.scheduler.schedule(0.seconds, 10.seconds) {
-            makeFuture(AutoScaleModifier.monitorAutoScaleGroups)
+            wrapExceptionHandling(AutoScaleModifier.monitorAutoScaleGroups)
         }
         Akka.system.scheduler.schedule(0.seconds, 60.seconds) {
-            makeFuture(PriceMonitor.monitorSpotPrices)
+            wrapExceptionHandling(PriceMonitor.monitorSpotPrices)
         }
         Akka.system.scheduler.schedule(0.seconds, 15.seconds) {
-            makeFuture(PriceMonitor.printPrices)
+            wrapExceptionHandling(PriceMonitor.printPrices)
         }
         Akka.system.scheduler.schedule(0.seconds, 60.seconds) {
-            makeFuture(AutoScalingDataMonitor.monitorAutoScalingData)
+            wrapExceptionHandling(AutoScalingDataMonitor.monitorAutoScalingData)
         }
     }
 
-    private[this] def makeFuture(action: Unit): Unit = {
-        val rethrowException: PartialFunction[Throwable, Unit] = { case e => throw e }
-        Future { action } onFailure rethrowException
+    private[this] def wrapExceptionHandling(action: => Unit) = {
+        try {
+            action
+        }
+        catch {
+            case t:Throwable => {
+                Logger.error("Error running scheduled task", t)
+                throw t
+            }
+        }
     }
 }

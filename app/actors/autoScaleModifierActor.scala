@@ -44,15 +44,16 @@ object AutoScaleModifier extends AmazonClient {
     private val spotReplacementInfoByGroup: HashMap[String, ReplacementInfo] = HashMap[String, ReplacementInfo]()
 
     def monitorAutoScaleGroups = {
-        if(autoScalingGroups.isEmpty || launchConfigurations.isEmpty)
-            Logger.debug("AutoScaling data is not ready yet")
-        else {
-            val queueResult: CreateQueueResult = sqsClient.createQueue(KnotifierQueueName)
-            val sqsMessages: ReceiveMessageResult = sqsClient.receiveMessage(new ReceiveMessageRequest().withQueueUrl(queueResult.getQueueUrl))
-            sqsMessages.getMessages foreach {sqsMessage: Message => processSQSMessage(sqsMessage)}
-            spotReplacementInfoByGroup.keySet foreach { group: String => processReplacementInfo(group) }
-            sqsMessages.getMessages foreach { sqsMessage => sqsClient.deleteMessage(queueResult.getQueueUrl, sqsMessage.getReceiptHandle)}
-            spotReplacementInfoByGroup.clear
+        (autoScalingGroups.isEmpty || launchConfigurations.isEmpty) match {
+            case true => Logger.debug("AutoScaling data is not ready yet")
+            case false => {
+                val queueResult: CreateQueueResult = sqsClient.createQueue(KnotifierQueueName)
+                val sqsMessages: ReceiveMessageResult = sqsClient.receiveMessage(new ReceiveMessageRequest().withQueueUrl(queueResult.getQueueUrl))
+                sqsMessages.getMessages foreach {sqsMessage: Message => processSQSMessage(sqsMessage)}
+                spotReplacementInfoByGroup.keySet foreach { group: String => processReplacementInfo(group) }
+                sqsMessages.getMessages foreach { sqsMessage => sqsClient.deleteMessage(queueResult.getQueueUrl, sqsMessage.getReceiptHandle)}
+                spotReplacementInfoByGroup.clear
+            }
         }
     }
 
@@ -82,7 +83,7 @@ object AutoScaleModifier extends AmazonClient {
 
     private[this] def processReplacementInfo(spotGroupName: String) = {
         val replacementInfo: ReplacementInfo = spotReplacementInfoByGroup.get(spotGroupName).get
-        Logger.debug(s"Replacements needed for group $spotGroupName: ${replacementInfo.instanceCount}")
+        Logger.info(s"Replacements needed for group $spotGroupName: ${replacementInfo.instanceCount}")
         val baseSpotGroupName: String = replacementInfo.baseSpotGroupName
         val baseLaunchConfigurationName: String = replacementInfo.baseLaunchConfigurationName
         val newInstanceInfo: SpotPriceInfo = discoverNewInstanceInfo(replacementInfo.getTagValue(PreferredTypesTag))
@@ -100,7 +101,7 @@ object AutoScaleModifier extends AmazonClient {
             val updateAutoScalingGroupRequest: UpdateAutoScalingGroupRequest = new UpdateAutoScalingGroupRequest
             updateAutoScalingGroupRequest.setAutoScalingGroupName(autoScalingGroup.getAutoScalingGroupName)
             updateAutoScalingGroupRequest.setLaunchConfigurationName(s"$baseLaunchConfigurationName-${newInstanceInfo.instanceType}")
-            updateAutoScalingGroupRequest.setDesiredCapacity(autoScalingGroup.getDesiredCapacity  + replacementInfo.instanceCount)
+            updateAutoScalingGroupRequest.setDesiredCapacity((autoScalingGroup.getDesiredCapacity + replacementInfo.instanceCount).min(autoScalingGroup.getMaxSize))
             asClient.updateAutoScalingGroup(updateAutoScalingGroupRequest)
             updateSingleAutoScalingGroup(s"$baseSpotGroupName-${newInstanceInfo.availabilityZone}")
         }
@@ -111,7 +112,7 @@ object AutoScaleModifier extends AmazonClient {
             val autoScalingGroup: AutoScalingGroup = autoScalingGroups.get(spotGroupName).get
             val updateAutoScalingGroupRequest: UpdateAutoScalingGroupRequest = new UpdateAutoScalingGroupRequest
             updateAutoScalingGroupRequest.setAutoScalingGroupName(autoScalingGroup.getAutoScalingGroupName)
-            updateAutoScalingGroupRequest.setDesiredCapacity(autoScalingGroup.getDesiredCapacity - replacementInfo.instanceCount)
+            updateAutoScalingGroupRequest.setDesiredCapacity((autoScalingGroup.getDesiredCapacity - replacementInfo.instanceCount).max(0)) //This shields against negative numbers
             asClient.updateAutoScalingGroup(updateAutoScalingGroupRequest)
             updateSingleAutoScalingGroup(spotGroupName)
         }
