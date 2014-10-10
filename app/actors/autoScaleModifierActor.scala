@@ -57,13 +57,19 @@ object AutoScaleModifier extends AmazonClient {
         }
     }
 
-    private[this] def processSQSMessage(sqsMessage: Message) = {
+    private[this] def processSQSMessage(sqsMessage: Message): Unit = {
         val message: JSONObject = new JSONObject(sqsMessage.getBody)
         val notification: JSONObject = new JSONObject(message.getString(MessageField))
         if(AutoScalingInstanceTerminateMessage == notification.getString(NotificationTypeField))
         {
             val awsGroupName: String = notification.getString(AutoScalingGroupIdField)
-            val autoScalingGroup: AutoScalingGroup = getAutoScalingGroupByAWSName(awsGroupName)
+            val autoScalingGroup: AutoScalingGroup = getAutoScalingGroupByAWSName(awsGroupName) match {
+                case Some(autoScalingGroup) => autoScalingGroup
+                case None => {
+                    Logger.error(s"Auto scaling group $awsGroupName not found, skipping")
+                    return;
+                }
+            }
             val groupName: String = getAutoScalingGroupsMapIndex(autoScalingGroup)
             val groupType: Option[String] = getGroupTypeTag(autoScalingGroup.getTags)
             if(groupType == Some(SpotGroupType))

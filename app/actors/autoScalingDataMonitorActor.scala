@@ -70,17 +70,21 @@ object AutoScalingDataMonitor extends AmazonClient {
         launchConfigurations(mapIndex) = launchConfiguration
     }
 
-    def getAutoScalingGroupByAWSName(awsName: String): AutoScalingGroup = {
-        autoScalingGroups.values.find({ autoScalingGroup: AutoScalingGroup => autoScalingGroup.getAutoScalingGroupName == awsName}).getOrElse({
-            val autoScalingGroupResult = asClient.describeAutoScalingGroups(new DescribeAutoScalingGroupsRequest withAutoScalingGroupNames(awsName))
-            if(!autoScalingGroupResult.getAutoScalingGroups.isEmpty)
-            {
-                val autoScalingGroup = autoScalingGroupResult.getAutoScalingGroups.get(0)
-                putAutoScalingGroupInMap(autoScalingGroup)
-                autoScalingGroup
+    def getAutoScalingGroupByAWSName(awsName: String): Option[AutoScalingGroup] = {
+        val localAutoScalingGroupOption: Option[AutoScalingGroup] = autoScalingGroups.values.find({ autoScalingGroup: AutoScalingGroup => autoScalingGroup.getAutoScalingGroupName == awsName})
+        localAutoScalingGroupOption match {
+            case Some(autoScalingGroup) => Some(autoScalingGroup)
+            case None => {
+                val autoScalingGroupResult = asClient.describeAutoScalingGroups(new DescribeAutoScalingGroupsRequest withAutoScalingGroupNames(awsName))
+                if(!autoScalingGroupResult.getAutoScalingGroups.isEmpty)
+                {
+                    val autoScalingGroup = autoScalingGroupResult.getAutoScalingGroups.get(0)
+                    putAutoScalingGroupInMap(autoScalingGroup)
+                    Some(autoScalingGroup)
+                }
+                else
+                    return None;
             }
-            else
-                throw new RuntimeException(s"Auto scaling group $awsName could not be found")
-        })
+        }
     }
 }
