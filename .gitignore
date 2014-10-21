@@ -33,5 +33,4 @@ dist
 LICENSE
 activator*
 *.log
-project/
 public/
