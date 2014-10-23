@@ -12,6 +12,12 @@ import actors.AutoScalingDataMonitor
 import util.NameHelper
 import util.NameHelper._
 
+object ReplacementInfo {
+    val nameHelper = new NameHelper
+}
+
+import ReplacementInfo._
+
 case class ReplacementInfo(
         spotGroupName: String,
         autoScalingGroup: AutoScalingGroup,
@@ -22,11 +28,11 @@ case class ReplacementInfo(
     }
 
     val baseSpotGroupName: String = {
-        getBaseName(tags, NameHelper.AutoScaleGroupSuffix)
+        nameHelper.getBaseName(tags, NameHelper.AutoScaleGroupSuffix)
     }
 
     val baseLaunchConfigurationName: String = {
-        getBaseName(tags, NameHelper.LaunchConfigurationSuffix)
+        nameHelper.getBaseName(tags, NameHelper.LaunchConfigurationSuffix)
     }
 
     def getTagValue(key: String): String = {

@@ -23,15 +23,16 @@ import com.amazonaws.services.sqs.model.ReceiveMessageRequest
 import com.amazonaws.services.sqs.model.ReceiveMessageResult
 import com.amazonaws.util.json.JSONObject
 import actors.AutoScalingDataMonitor._
+
 import akka.util.Timeout
 import model.ReplacementInfo
 import model.SpotPriceInfo
 import play.Logger
 import util.AmazonClient
 import scala.util.matching.Regex
-import util.NameHelper._
+import util.NameHelper
 
-object AutoScaleModifier extends AmazonClient {
+class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMonitor: PriceMonitor) extends AmazonClient {
 
     private final val SpotGroupType: String = "Spot"
     private final val NotificationTypeField: String = "Event"
@@ -40,6 +41,7 @@ object AutoScaleModifier extends AmazonClient {
     private final val AutoScalingInstanceTerminateMessage: String = "autoscaling:EC2_INSTANCE_TERMINATE"
     private final val GroupTypeTag: String = "GroupType"
     private final val KnotifierQueueName: String = "knotifier-queue"
+    private final val nameHelper: NameHelper = new NameHelper
 
     private val spotReplacementInfoByGroup: HashMap[String, ReplacementInfo] = HashMap[String, ReplacementInfo]()
 
@@ -63,14 +65,14 @@ object AutoScaleModifier extends AmazonClient {
         if(AutoScalingInstanceTerminateMessage == notification.getString(NotificationTypeField))
         {
             val awsGroupName: String = notification.getString(AutoScalingGroupIdField)
-            val autoScalingGroup: AutoScalingGroup = getAutoScalingGroupByAWSName(awsGroupName) match {
+            val autoScalingGroup: AutoScalingGroup = autoScalingDataMonitor.getAutoScalingGroupByAWSName(awsGroupName) match {
                 case Some(autoScalingGroup) => autoScalingGroup
                 case None => {
                     Logger.error(s"Auto scaling group $awsGroupName not found, skipping")
                     return;
                 }
             }
-            val groupName: String = getAutoScalingGroupsMapIndex(autoScalingGroup)
+            val groupName: String = nameHelper.getAutoScalingGroupsMapIndex(autoScalingGroup)
             val groupType: Option[String] = getGroupTypeTag(autoScalingGroup.getTags)
             if(groupType == Some(SpotGroupType))
                 spotReplacementInfoByGroup.get(groupName) match {
@@ -92,27 +94,27 @@ object AutoScaleModifier extends AmazonClient {
         Logger.info(s"Replacements needed for group $spotGroupName: ${replacementInfo.instanceCount}")
         val baseSpotGroupName: String = replacementInfo.baseSpotGroupName
         val baseLaunchConfigurationName: String = replacementInfo.baseLaunchConfigurationName
-        val newInstanceInfo: SpotPriceInfo = discoverNewInstanceInfo(replacementInfo.getTagValue(PreferredTypesTag))
+        val newInstanceInfo: SpotPriceInfo = discoverNewInstanceInfo(replacementInfo.getTagValue(NameHelper.PreferredTypesTag))
         
-        if(!launchConfigurations.containsKey(getLaunchConfigurationNameWithInstanceType(baseLaunchConfigurationName, s"${newInstanceInfo.instanceType}")))
+        if(!launchConfigurations.containsKey(nameHelper.getLaunchConfigurationNameWithInstanceType(baseLaunchConfigurationName, s"${newInstanceInfo.instanceType}")))
         {
             val launchConfiguration: LaunchConfiguration = launchConfigurations.getOrElse(baseLaunchConfigurationName,
                     throw new RuntimeException(s"Launch configuration $baseLaunchConfigurationName wasn't found"))
             val createLaunchConfigurationRequest: CreateLaunchConfigurationRequest = composeNewLaunchConfigurationRequest(newInstanceInfo.instanceType, replacementInfo, launchConfiguration)
             asClient.createLaunchConfiguration(createLaunchConfigurationRequest)
         }
-        if(autoScalingGroups.containsKey(getAutoScalingGroupNameWithAvailabilityZone(baseSpotGroupName, newInstanceInfo.availabilityZone)))
+        if(autoScalingGroups.containsKey(nameHelper.getAutoScalingGroupNameWithAvailabilityZone(baseSpotGroupName, newInstanceInfo.availabilityZone)))
         {
-            val autoScalingGroup: AutoScalingGroup = autoScalingGroups.get(getAutoScalingGroupNameWithAvailabilityZone(baseSpotGroupName, newInstanceInfo.availabilityZone)).get
+            val autoScalingGroup: AutoScalingGroup = autoScalingGroups.get(nameHelper.getAutoScalingGroupNameWithAvailabilityZone(baseSpotGroupName, newInstanceInfo.availabilityZone)).get
             val updateAutoScalingGroupRequest: UpdateAutoScalingGroupRequest = new UpdateAutoScalingGroupRequest
             updateAutoScalingGroupRequest.setAutoScalingGroupName(autoScalingGroup.getAutoScalingGroupName)
             updateAutoScalingGroupRequest.setLaunchConfigurationName(s"$baseLaunchConfigurationName-${newInstanceInfo.instanceType}")
             updateAutoScalingGroupRequest.setDesiredCapacity((autoScalingGroup.getDesiredCapacity + replacementInfo.instanceCount).min(autoScalingGroup.getMaxSize))
             asClient.updateAutoScalingGroup(updateAutoScalingGroupRequest)
-            updateSingleAutoScalingGroup(s"$baseSpotGroupName-${newInstanceInfo.availabilityZone}")
+            autoScalingDataMonitor.updateSingleAutoScalingGroup(s"$baseSpotGroupName-${newInstanceInfo.availabilityZone}")
         }
         else
-            throw new RuntimeException(s"Auto scaling group ${getAutoScalingGroupNameWithAvailabilityZone(baseSpotGroupName, newInstanceInfo.availabilityZone)} wasn't found")
+            throw new RuntimeException(s"Auto scaling group ${nameHelper.getAutoScalingGroupNameWithAvailabilityZone(baseSpotGroupName, newInstanceInfo.availabilityZone)} wasn't found")
         if(autoScalingGroups.containsKey(spotGroupName))
         {
             val autoScalingGroup: AutoScalingGroup = autoScalingGroups.get(spotGroupName).get
@@ -120,7 +122,7 @@ object AutoScaleModifier extends AmazonClient {
             updateAutoScalingGroupRequest.setAutoScalingGroupName(autoScalingGroup.getAutoScalingGroupName)
             updateAutoScalingGroupRequest.setDesiredCapacity((autoScalingGroup.getDesiredCapacity - replacementInfo.instanceCount).max(0)) //This shields against negative numbers
             asClient.updateAutoScalingGroup(updateAutoScalingGroupRequest)
-            updateSingleAutoScalingGroup(spotGroupName)
+            autoScalingDataMonitor.updateSingleAutoScalingGroup(spotGroupName)
         }
         else
             throw new RuntimeException(s"Auto scaling group $spotGroupName wasn't found")
@@ -129,7 +131,7 @@ object AutoScaleModifier extends AmazonClient {
     private[this] def discoverNewInstanceInfo(preferredTypes: String): SpotPriceInfo =
     {
         val preferredTypesSet: Set[String] = preferredTypes.split(",").toSet
-        val weightedPrices: Map[InstanceType, SpotPriceInfo] = PriceMonitor.getWeightedPrices
+        val weightedPrices: Map[InstanceType, SpotPriceInfo] = priceMonitor.getWeightedPrices
         SortedMap[Double, SpotPriceInfo](weightedPrices.filterKeys({instanceType: InstanceType =>
         preferredTypesSet.contains(instanceType.toString)
         }).collect({
@@ -145,8 +147,8 @@ object AutoScaleModifier extends AmazonClient {
         createLaunchConfigurationRequest.setSecurityGroups(launchConfiguration.getSecurityGroups)
         createLaunchConfigurationRequest.setUserData(launchConfiguration.getUserData)
         createLaunchConfigurationRequest.setInstanceType(s"$instanceType")
-        createLaunchConfigurationRequest.setSpotPrice(replacementInfo.getTagValue(SpotPriceTag))
-        createLaunchConfigurationRequest.setLaunchConfigurationName(getLaunchConfigurationNameWithInstanceType(replacementInfo.baseLaunchConfigurationName, s"$instanceType"))
+        createLaunchConfigurationRequest.setSpotPrice(replacementInfo.getTagValue(NameHelper.SpotPriceTag))
+        createLaunchConfigurationRequest.setLaunchConfigurationName(nameHelper.getLaunchConfigurationNameWithInstanceType(replacementInfo.baseLaunchConfigurationName, s"$instanceType"))
         createLaunchConfigurationRequest
     }
 }

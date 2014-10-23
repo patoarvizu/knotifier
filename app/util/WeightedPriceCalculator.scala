@@ -18,29 +18,29 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import play.Logger
 import scala.annotation.tailrec
 
-object WeightedPriceCalculator extends AmazonClient {
+class WeightedPriceCalculator extends AmazonClient {
 
     private final val LinuxProductDescription: String = "Linux/UNIX"
 
     def getWeightedPrice(implicit instanceType: InstanceType, availabilityZone: String): Double = {
         
-        val currentPriceFut = Future {
+        val currentPriceFuture = Future {
             getCurrentPrice(instanceType, availabilityZone)
         }
-        val lastDayAverageFut = Future {
+        val lastDayAverageFuture = Future {
             getLastDayAverage(instanceType, availabilityZone)
         }
-        val threeMonthAverageFut = Future {
+        val threeMonthAverageFuture = Future {
             getThreeMonthAverage(instanceType, availabilityZone)
         }
         
         Await.result (
         for {
-            currentPrice <- currentPriceFut
-            lastDayAverage <- lastDayAverageFut
-            threeMonthAverage <- threeMonthAverageFut
+            currentPrice <- currentPriceFuture
+            lastDayAverage <- lastDayAverageFuture
+            threeMonthAverage <- threeMonthAverageFuture
         }
-        yield Math.floor(currentPrice.getOrElse(lastDayAverage.get) * .25 + lastDayAverage.get * .25 + threeMonthAverage.get * .5 * 10000) / 10000 //Round to four decimals
+        yield Math.floor((currentPrice.getOrElse(lastDayAverage.get) * .25 + lastDayAverage.get * .25 + threeMonthAverage.get * .5) * 10000) / 10000 //Round to four decimals
         , Duration.Inf
         )
     }
@@ -68,7 +68,7 @@ object WeightedPriceCalculator extends AmazonClient {
         val sumOfThis: Double = spotPriceHistory.getSpotPriceHistory.map{spotPrice: SpotPrice => spotPrice.getSpotPrice.toDouble}.sum
         val accumulatedSumThis: Double = accumulatedSum + sumOfThis
         val numberOfResultsThis: Int = numberOfResults + spotPriceHistory.getSpotPriceHistory.size
-        if(spotPriceHistory.getNextToken.isEmpty)
+        if(spotPriceHistory.getNextToken == null || spotPriceHistory.getNextToken.isEmpty)
         {
             if (numberOfResultsThis == 0) None else Some(accumulatedSumThis / numberOfResultsThis)
         }

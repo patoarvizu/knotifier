@@ -13,17 +13,20 @@ import play.Logger
 object Global extends GlobalSettings {
 
     override def onStart(app: Application) {
+        val priceMonitor = new PriceMonitor()
+        val autoScalingDataMonitor = new AutoScalingDataMonitor()
+        val autoScaleModifier = new AutoScaleModifier(autoScalingDataMonitor, priceMonitor)
         Akka.system.scheduler.schedule(0.seconds, 10.seconds) {
-            wrapExceptionHandling(AutoScaleModifier.monitorAutoScaleGroups)
+            wrapExceptionHandling(autoScaleModifier.monitorAutoScaleGroups)
         }
         Akka.system.scheduler.schedule(0.seconds, 60.seconds) {
-            wrapExceptionHandling(PriceMonitor.monitorSpotPrices)
+            wrapExceptionHandling(priceMonitor.monitorSpotPrices)
         }
         Akka.system.scheduler.schedule(0.seconds, 15.seconds) {
-            wrapExceptionHandling(PriceMonitor.printPrices)
+            wrapExceptionHandling(priceMonitor.printPrices)
         }
         Akka.system.scheduler.schedule(0.seconds, 60.seconds) {
-            wrapExceptionHandling(AutoScalingDataMonitor.monitorAutoScalingData)
+            wrapExceptionHandling(autoScalingDataMonitor.monitorAutoScalingData)
         }
     }
 

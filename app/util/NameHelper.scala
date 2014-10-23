@@ -9,24 +9,29 @@ import com.amazonaws.services.ec2.model.InstanceType
 import scala.collection.Map
 
 object NameHelper {
-    final val SpotPriceTag: String = "SpotPrice"
     final val PreferredTypesTag: String = "PreferredTypes"
+    final val SpotPriceTag: String = "SpotPrice"
     final val SystemTag: String = "System";
     final val StackNameTag: String = "aws:cloudformation:stack-name"
     final val AvailabilityZoneTag: String = "AvailabilityZone"
     final val AutoScaleGroupSuffix: String = "ASScalingGroupSpot"
     final val BaseSpotGroupNameTag: String = "BaseSpotGroupName"
     final val LaunchConfigurationSuffix: String = "ASLaunchConfigurationSpot"
+}
+
+import NameHelper._
+
+class NameHelper {
 
     def getAutoScalingGroupsMapIndex(autoScalingGroup: AutoScalingGroup): String = {
         val tags: Iterable[TagDescription] = autoScalingGroup.getTags
-        val stackName: String = getTagValue(tags, NameHelper.StackNameTag)
-        val system: String = getTagValue(tags, NameHelper.SystemTag)
-        val availabilityZone: String = getTagValue(tags, NameHelper.AvailabilityZoneTag)
+        val stackName: String = getTagValue(tags, StackNameTag)
+        val system: String = getTagValue(tags, SystemTag)
+        val availabilityZone: String = getTagValue(tags, AvailabilityZoneTag)
         if(stackName.isEmpty || system.isEmpty || availabilityZone.isEmpty)
             stripARNid(autoScalingGroup.getAutoScalingGroupName)
-            else
-                s"$stackName-$system${NameHelper.AutoScaleGroupSuffix}-$availabilityZone"
+        else
+            s"$stackName-$system$AutoScaleGroupSuffix-$availabilityZone"
     }
 
     def getLaunchConfigurationsMapIndex(launchConfiguration: LaunchConfiguration): String = {
