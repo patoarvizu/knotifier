@@ -16,6 +16,7 @@ import util.NameHelper.StackNameTag
 import util.NameHelper.SystemTag
 
 class NameHelperTest extends Specification {
+    isolated
     val nameHelper = new NameHelper
     "An auto scaling group map index" should {
         "Be its CloudFormation generated id" in {

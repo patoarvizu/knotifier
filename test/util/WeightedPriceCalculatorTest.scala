@@ -1,20 +1,19 @@
 package util
 
-import org.specs2.mutable.Specification
-import com.amazonaws.services.ec2.model.InstanceType
-import org.specs2.mock.Mockito
 import java.util.ArrayList
-import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryResult
-import com.amazonaws.services.ec2.model.SpotPrice
+import java.util.Calendar
+
+import org.mockito.ArgumentMatcher
+import org.specs2.matcher.Hamcrest
+import org.specs2.matcher.ValueCheck.valueIsTypedValueCheck
+import org.specs2.mock.Mockito
+import org.specs2.mutable.Specification
+
 import com.amazonaws.services.ec2.AmazonEC2AsyncClient
 import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryRequest
-import java.util.Calendar
-import org.specs2.matcher.Hamcrest
-import org.specs2.matcher.Matcher
-import org.hamcrest.BaseMatcher
-import org.hamcrest.Description
-import org.hamcrest.CustomMatcher
-import org.mockito.ArgumentMatcher
+import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryResult
+import com.amazonaws.services.ec2.model.InstanceType
+import com.amazonaws.services.ec2.model.SpotPrice
 
 class WeightedPriceCalculatorTest extends Specification with Mockito with Hamcrest {
     isolated

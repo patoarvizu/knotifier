@@ -18,25 +18,28 @@ import util.AmazonClient
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.collection.mutable.StringBuilder
 
+import scala.collection.mutable.MutableList
+import PriceMonitor._
+
 object PriceMonitor {
     private val lowestWeightedPrices: Map[InstanceType, SpotPriceInfo] = new TrieMap[InstanceType, SpotPriceInfo]
+    private final val instanceTypes: Set[InstanceType] = Set(C32xlarge, C34xlarge, C38xlarge, C3Large, C3Xlarge, M32xlarge, M3Large, M3Medium, M3Xlarge)
+    private final val availabilityZones: Set[String] = Set("us-east-1a", "us-east-1d")
 }
-
-import PriceMonitor._
 
 class PriceMonitor extends AmazonClient {
 
-    private final val instanceTypes: Set[InstanceType] = Set(C32xlarge, C34xlarge, C38xlarge, C3Large, C3Xlarge, M32xlarge, M3Large, M3Medium, M3Xlarge)
-    private final val availabilityZones: Set[String] = Set("us-east-1a", "us-east-1d")
-    private final val weightedPriceCalculator = new WeightedPriceCalculator
+    private[actors] val weightedPriceCalculator: WeightedPriceCalculator = new WeightedPriceCalculator
 
-    def monitorSpotPrices = {
+    def monitorSpotPrices: Iterable[Future[Unit]] = {
+        val futuresList: MutableList[Future[Unit]] = new MutableList[Future[Unit]]
         for {
             instanceType <- instanceTypes
             availabilityZone <- availabilityZones
         } {
-            Future { setWeightedPrice(instanceType, availabilityZone) }
+            futuresList += (Future { setWeightedPrice(instanceType, availabilityZone) })
         }
+        futuresList
     }
 
     def getWeightedPrices: ImmutableMap[InstanceType, SpotPriceInfo] = new ImmutableHashMap[InstanceType, SpotPriceInfo]() ++ lowestWeightedPrices
