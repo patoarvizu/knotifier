@@ -22,11 +22,12 @@ object AutoScalingDataMonitor {
     val autoScalingGroups: Map[String, AutoScalingGroup] = new TrieMap[String, AutoScalingGroup];
 }
 
-import AutoScalingDataMonitor._
-
 class AutoScalingDataMonitor extends AmazonClient {
 
     private final val nameHelper: NameHelper = new NameHelper
+
+    val launchConfigurations = AutoScalingDataMonitor.launchConfigurations
+    val autoScalingGroups = AutoScalingDataMonitor.autoScalingGroups
 
     def monitorAutoScalingData = {
         val autoScalingGroupsFuture: Future[DescribeAutoScalingGroupsResult] = Future { asClient.describeAutoScalingGroups }

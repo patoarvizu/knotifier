@@ -30,12 +30,13 @@ class AutoScalingDataMonitorTest extends Specification with Mockito {
             mockASClient.describeAutoScalingGroups returns new DescribeAutoScalingGroupsResult()
                 .withAutoScalingGroups(autoScalingGroupBefore)
             autoScalingDataMonitor.monitorAutoScalingData
+            autoScalingDataMonitor.autoScalingGroups("autoScalingGroup") must beTheSameAs(autoScalingGroupBefore)
             val autoScalingGroupAfter = new AutoScalingGroup()
                     .withAutoScalingGroupName("autoScalingGroup")
             mockASClient.describeAutoScalingGroups(any[DescribeAutoScalingGroupsRequest]) returns new DescribeAutoScalingGroupsResult()
                 .withAutoScalingGroups(autoScalingGroupAfter)
             autoScalingDataMonitor.updateSingleAutoScalingGroup("autoScalingGroup")
-            AutoScalingDataMonitor.autoScalingGroups("autoScalingGroup") must beTheSameAs(autoScalingGroupAfter)
+            autoScalingDataMonitor.autoScalingGroups("autoScalingGroup") must beTheSameAs(autoScalingGroupAfter)
         }
     }
     
