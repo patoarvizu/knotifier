@@ -43,23 +43,9 @@ class AutoScalingDataMonitor extends AmazonClient {
         }
     }
 
-    def updateSingleLaunchConfiguration(launchConfigurationName: String) = {
-        val launchConfiguration: LaunchConfiguration = launchConfigurations(launchConfigurationName)
-        Future { asClient.describeLaunchConfigurations(new DescribeLaunchConfigurationsRequest withLaunchConfigurationNames(launchConfiguration.getLaunchConfigurationName)) } onSuccess {
-            case launchConfigurationResult: DescribeLaunchConfigurationsResult =>
-                if(!launchConfigurationResult.getLaunchConfigurations.isEmpty)
-                    putLaunchConfigurationInMap(launchConfigurationResult.getLaunchConfigurations.get(0))
-        }
-    }
-
     def updateAutoScalingGroupsData = {
         val autoScalingGroupsResult: DescribeAutoScalingGroupsResult = asClient.describeAutoScalingGroups
         autoScalingGroupsResult.getAutoScalingGroups foreach putAutoScalingGroupInMap
-    }
-
-    def updateLaunchConfigurationsData() = {
-        val launchConfigurationsResult: DescribeLaunchConfigurationsResult = asClient.describeLaunchConfigurations()
-        launchConfigurationsResult.getLaunchConfigurations foreach putLaunchConfigurationInMap
     }
 
     def getAutoScalingGroupByAWSName(awsName: String): Option[AutoScalingGroup] = {
@@ -79,21 +65,27 @@ class AutoScalingDataMonitor extends AmazonClient {
             }
         }
     }
-    
+
     def updateSingleAutoScalingGroup(autoScalingGroupName: String) = {
         val autoScalingGroup: AutoScalingGroup = autoScalingGroups(autoScalingGroupName)
-        val autoScalingGroupResult: DescribeAutoScalingGroupsResult = asClient.describeAutoScalingGroups(new DescribeAutoScalingGroupsRequest withAutoScalingGroupNames(autoScalingGroup.getAutoScalingGroupName))
+        val autoScalingGroupResult: DescribeAutoScalingGroupsResult =
+            asClient.describeAutoScalingGroups(new DescribeAutoScalingGroupsRequest withAutoScalingGroupNames(autoScalingGroup.getAutoScalingGroupName))
         if(!autoScalingGroupResult.getAutoScalingGroups.isEmpty)
             putAutoScalingGroupInMap(autoScalingGroupResult.getAutoScalingGroups.get(0))
     }
-    
+
     private def putAutoScalingGroupInMap(autoScalingGroup: AutoScalingGroup) = {
         val mapIndex = nameHelper.getAutoScalingGroupsMapIndex(autoScalingGroup)
         autoScalingGroups(mapIndex) = autoScalingGroup
     }
 
-    private[this] def putLaunchConfigurationInMap(launchConfiguration: LaunchConfiguration) = {
+    private def putLaunchConfigurationInMap(launchConfiguration: LaunchConfiguration) = {
         val mapIndex = nameHelper.getLaunchConfigurationsMapIndex(launchConfiguration);
         launchConfigurations(mapIndex) = launchConfiguration
+    }
+
+    private[actors] def clearAutoScalingData = {
+        autoScalingGroups.clear
+        launchConfigurations.clear
     }
 }
