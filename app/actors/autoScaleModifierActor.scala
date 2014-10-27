@@ -22,7 +22,6 @@ import com.amazonaws.services.sqs.model.Message
 import com.amazonaws.services.sqs.model.ReceiveMessageRequest
 import com.amazonaws.services.sqs.model.ReceiveMessageResult
 import com.amazonaws.util.json.JSONObject
-import actors.AutoScalingDataMonitor._
 
 import akka.util.Timeout
 import model.ReplacementInfo
@@ -43,6 +42,8 @@ class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMon
     private final val KnotifierQueueName: String = "knotifier-queue"
     private final val nameHelper: NameHelper = new NameHelper
 
+    private val launchConfigurations = autoScalingDataMonitor.launchConfigurations
+    private val autoScalingGroups = autoScalingDataMonitor.autoScalingGroups
     private val spotReplacementInfoByGroup: HashMap[String, ReplacementInfo] = HashMap[String, ReplacementInfo]()
 
     def monitorAutoScaleGroups = {
