@@ -15,6 +15,8 @@ import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryResult
 import com.amazonaws.services.ec2.model.InstanceType
 import com.amazonaws.services.ec2.model.SpotPrice
 
+import org.mockito.Mockito.doReturn
+
 class WeightedPriceCalculatorTest extends Specification with Mockito with Hamcrest {
     isolated
     trait IsTimeRangeRequest extends ArgumentMatcher[DescribeSpotPriceHistoryRequest] {
@@ -78,11 +80,11 @@ class WeightedPriceCalculatorTest extends Specification with Mockito with Hamcre
     "Getting a weighted price" should {
         "Return a weighted price of lastPrice * .25 + lastDayAverage * .25 + threeMonthAverage * .5" in {
             val fakeSpotPriceHistoryResultCurrent = new DescribeSpotPriceHistoryResult().withSpotPriceHistory(new SpotPrice().withSpotPrice("0.15"))
-            doAnswer({ any => fakeSpotPriceHistoryResultCurrent }).when(mockEC2Client).describeSpotPriceHistory(argThat(IsRequestOfLastPrice))
+            doReturn(fakeSpotPriceHistoryResultCurrent).when(mockEC2Client).describeSpotPriceHistory(argThat(IsRequestOfLastPrice))
             val fakeSpotPriceHistoryResultLastDay = new DescribeSpotPriceHistoryResult().withSpotPriceHistory(new SpotPrice().withSpotPrice("0.20"))
-            doAnswer({ any => fakeSpotPriceHistoryResultLastDay }).when(mockEC2Client).describeSpotPriceHistory(argThat(IsRequestOfLastDay))
+            doReturn(fakeSpotPriceHistoryResultLastDay).when(mockEC2Client).describeSpotPriceHistory(argThat(IsRequestOfLastDay))
             val fakeSpotPriceHistoryResultLastThreeMonths = new DescribeSpotPriceHistoryResult().withSpotPriceHistory(new SpotPrice().withSpotPrice("0.10"))
-            doAnswer({ any => fakeSpotPriceHistoryResultLastThreeMonths }).when(mockEC2Client).describeSpotPriceHistory(argThat(IsRequestOfLastThreeMonths))
+            doReturn(fakeSpotPriceHistoryResultLastThreeMonths).when(mockEC2Client).describeSpotPriceHistory(argThat(IsRequestOfLastThreeMonths))
             val weightedPrice = weightedPriceCalculator.getWeightedPrice(InstanceType.C3Large, "us-east-1a")
             weightedPrice mustEqual(0.1375)
         }
