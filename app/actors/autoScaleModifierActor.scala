@@ -30,20 +30,23 @@ import play.Logger
 import util.AmazonClient
 import scala.util.matching.Regex
 import util.NameHelper
+import util.NameHelper.GroupTypeTag 
+import AutoScaleModifier._
 
-class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMonitor: PriceMonitor) extends AmazonClient {
+object AutoScaleModifier {
+    final val AutoScalingInstanceTerminateMessage: String = "autoscaling:EC2_INSTANCE_TERMINATE";
+    final val SpotGroupType: String = "Spot"
+}
 
-    private final val SpotGroupType: String = "Spot"
+class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMonitor: PriceMonitor, nameHelper: NameHelper) extends AmazonClient {
+
     private final val NotificationTypeField: String = "Event"
     private final val MessageField: String = "Message"
     private final val AutoScalingGroupIdField: String = "AutoScalingGroupName"
-    private final val AutoScalingInstanceTerminateMessage: String = "autoscaling:EC2_INSTANCE_TERMINATE"
-    private final val GroupTypeTag: String = "GroupType"
     private final val KnotifierQueueName: String = "knotifier-queue"
-    private final val nameHelper: NameHelper = new NameHelper
 
-    private val launchConfigurations = autoScalingDataMonitor.launchConfigurations
-    private val autoScalingGroups = autoScalingDataMonitor.autoScalingGroups
+    private def launchConfigurations = autoScalingDataMonitor.launchConfigurations
+    private def autoScalingGroups = autoScalingDataMonitor.autoScalingGroups
     private val spotReplacementInfoByGroup: HashMap[String, ReplacementInfo] = HashMap[String, ReplacementInfo]()
 
     def monitorAutoScaleGroups = {
@@ -52,9 +55,9 @@ class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMon
             case false => {
                 val queueResult: CreateQueueResult = sqsClient.createQueue(KnotifierQueueName)
                 val sqsMessages: ReceiveMessageResult = sqsClient.receiveMessage(new ReceiveMessageRequest().withQueueUrl(queueResult.getQueueUrl))
-                sqsMessages.getMessages foreach {sqsMessage: Message => processSQSMessage(sqsMessage)}
+                sqsMessages.getMessages foreach { sqsMessage: Message => processSQSMessage(sqsMessage) }
                 spotReplacementInfoByGroup.keySet foreach { group: String => processReplacementInfo(group) }
-                sqsMessages.getMessages foreach { sqsMessage => sqsClient.deleteMessage(queueResult.getQueueUrl, sqsMessage.getReceiptHandle)}
+                sqsMessages.getMessages foreach { sqsMessage => sqsClient.deleteMessage(queueResult.getQueueUrl, sqsMessage.getReceiptHandle) }
                 spotReplacementInfoByGroup.clear
             }
         }
@@ -74,19 +77,13 @@ class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMon
                 }
             }
             val groupName: String = nameHelper.getAutoScalingGroupsMapIndex(autoScalingGroup)
-            val groupType: Option[String] = getGroupTypeTag(autoScalingGroup.getTags)
-            if(groupType == Some(SpotGroupType))
-                spotReplacementInfoByGroup.get(groupName) match {
+            val groupType: String = nameHelper.getTagValue(autoScalingGroup.getTags, GroupTypeTag)
+            groupType match {
+                case SpotGroupType => spotReplacementInfoByGroup.get(groupName) match {
                     case Some(spotReplacementInfo) => spotReplacementInfoByGroup.put(groupName, spotReplacementInfo.copy(newInstances=spotReplacementInfo.instanceCount + 1))
                     case None => spotReplacementInfoByGroup.put(groupName, ReplacementInfo(spotGroupName=groupName, autoScalingGroup=autoScalingGroup))
                 }
-        }
-    }
-
-    private[this] def getGroupTypeTag(tags: Iterable[TagDescription]): Option[String] = {
-        tags.find({ tag: TagDescription => tag.getKey == GroupTypeTag}) match {
-            case Some(tag) => Some(tag.getValue)
-            case None => None
+            }
         }
     }
 
@@ -96,7 +93,6 @@ class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMon
         val baseSpotGroupName: String = replacementInfo.baseSpotGroupName
         val baseLaunchConfigurationName: String = replacementInfo.baseLaunchConfigurationName
         val newInstanceInfo: SpotPriceInfo = discoverNewInstanceInfo(replacementInfo.getTagValue(NameHelper.PreferredTypesTag))
-        
         if(!launchConfigurations.containsKey(nameHelper.getLaunchConfigurationNameWithInstanceType(baseLaunchConfigurationName, s"${newInstanceInfo.instanceType}")))
         {
             val launchConfiguration: LaunchConfiguration = launchConfigurations.getOrElse(baseLaunchConfigurationName,

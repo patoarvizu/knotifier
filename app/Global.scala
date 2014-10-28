@@ -9,13 +9,14 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import play.Logger
+import util.NameHelper
 
 object Global extends GlobalSettings {
 
     override def onStart(app: Application) {
         val priceMonitor = new PriceMonitor()
         val autoScalingDataMonitor = new AutoScalingDataMonitor()
-        val autoScaleModifier = new AutoScaleModifier(autoScalingDataMonitor, priceMonitor)
+        val autoScaleModifier = new AutoScaleModifier(autoScalingDataMonitor, priceMonitor, new NameHelper)
         Akka.system.scheduler.schedule(0.seconds, 10.seconds) {
             wrapExceptionHandling(autoScaleModifier.monitorAutoScaleGroups)
         }

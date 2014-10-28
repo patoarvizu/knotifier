@@ -16,7 +16,8 @@ object NameHelper {
     final val AvailabilityZoneTag: String = "AvailabilityZone"
     final val AutoScaleGroupSuffix: String = "ASScalingGroupSpot"
     final val BaseSpotGroupNameTag: String = "BaseSpotGroupName"
-    final val LaunchConfigurationSuffix: String = "ASLaunchConfigurationSpot"
+    final val LaunchConfigurationSuffix: String = "ASLaunchConfigurationSpot";
+    final val GroupTypeTag: String = "GroupType"
 }
 
 import NameHelper._
@@ -52,7 +53,7 @@ class NameHelper {
         s"$stackName-$system$suffix"
     }
 
-    private[this] def getTagValue(tags: Iterable[TagDescription], tagKey: String): String = {
+    def getTagValue(tags: Iterable[TagDescription], tagKey: String): String = {
         val tagDescription: Option[TagDescription] = (tags find({tagDescription: TagDescription => tagDescription.getKey == tagKey }))
         tagDescription match {
             case Some(tagDescription) => tagDescription.getValue()
