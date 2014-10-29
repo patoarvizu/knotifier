@@ -129,13 +129,11 @@ class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMon
 
     private[this] def discoverNewInstanceInfo(preferredTypes: String): SpotPriceInfo =
     {
-        val preferredTypesSet: Set[String] = preferredTypes.split(",").toSet
+        val preferredTypesSet: Set[InstanceType] = preferredTypes.split(",").toSet.map(InstanceType.fromValue)
         val weightedPrices: Map[InstanceType, SpotPriceInfo] = priceMonitor.getWeightedPrices
-        SortedMap[Double, SpotPriceInfo](weightedPrices.filterKeys({instanceType: InstanceType =>
-        preferredTypesSet.contains(instanceType.toString)
-        }).collect({
-            case (instanceType: InstanceType, spotPriceInfo: SpotPriceInfo) => spotPriceInfo.price -> spotPriceInfo
-        }).toSeq:_*).head._2
+        val filterByPreferredTypes = weightedPrices.filterKeys(preferredTypesSet)
+        val spotPriceInfos = filterByPreferredTypes.values
+        spotPriceInfos.minBy({spotPriceInfo: SpotPriceInfo => spotPriceInfo.price})
     }
 
     private[this] def composeNewLaunchConfigurationRequest(instanceType: InstanceType, replacementInfo: ReplacementInfo, launchConfiguration: LaunchConfiguration): CreateLaunchConfigurationRequest =
