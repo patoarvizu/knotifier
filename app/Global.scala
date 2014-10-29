@@ -16,7 +16,7 @@ object Global extends GlobalSettings {
     override def onStart(app: Application) {
         val priceMonitor = new PriceMonitor()
         val autoScalingDataMonitor = new AutoScalingDataMonitor()
-        val autoScaleModifier = new AutoScaleModifier(autoScalingDataMonitor, priceMonitor, new NameHelper)
+        val autoScaleModifier = new AutoScaleModifier(autoScalingDataMonitor, priceMonitor)
         Akka.system.scheduler.schedule(0.seconds, 10.seconds) {
             wrapExceptionHandling(autoScaleModifier.monitorAutoScaleGroups)
         }

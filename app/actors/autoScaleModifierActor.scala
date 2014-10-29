@@ -38,12 +38,14 @@ object AutoScaleModifier {
     final val SpotGroupType: String = "Spot"
 }
 
-class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMonitor: PriceMonitor, nameHelper: NameHelper) extends AmazonClient {
+class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMonitor: PriceMonitor) extends AmazonClient {
 
     private final val NotificationTypeField: String = "Event"
     private final val MessageField: String = "Message"
     private final val AutoScalingGroupIdField: String = "AutoScalingGroupName"
     private final val KnotifierQueueName: String = "knotifier-queue"
+
+    private val nameHelper = new NameHelper
 
     private def launchConfigurations = autoScalingDataMonitor.launchConfigurations
     private def autoScalingGroups = autoScalingDataMonitor.autoScalingGroups
