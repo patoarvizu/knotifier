@@ -119,7 +119,7 @@ class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMon
             val autoScalingGroup: AutoScalingGroup = autoScalingGroups.get(spotGroupName).get
             val updateAutoScalingGroupRequest: UpdateAutoScalingGroupRequest = new UpdateAutoScalingGroupRequest
             updateAutoScalingGroupRequest.setAutoScalingGroupName(autoScalingGroup.getAutoScalingGroupName)
-            updateAutoScalingGroupRequest.setDesiredCapacity((autoScalingGroup.getDesiredCapacity - replacementInfo.instanceCount).max(0)) //This shields against negative numbers
+            updateAutoScalingGroupRequest.setDesiredCapacity((autoScalingGroup.getDesiredCapacity - replacementInfo.instanceCount).max(autoScalingGroup.getMinSize))
             asClient.updateAutoScalingGroup(updateAutoScalingGroupRequest)
             autoScalingDataMonitor.updateSingleAutoScalingGroup(spotGroupName)
         }

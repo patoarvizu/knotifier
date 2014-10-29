@@ -14,7 +14,7 @@ import com.amazonaws.services.autoscaling.AmazonAutoScalingAsyncClient
 import com.amazonaws.services.sqs.model.Message
 import com.amazonaws.services.autoscaling.model.TagDescription
 import util.NameHelper
-import com.amazonaws.services.ec2.model.InstanceType.M3Medium
+import com.amazonaws.services.ec2.model.InstanceType._
 import model.SpotPriceInfo
 import com.amazonaws.services.autoscaling.model.CreateLaunchConfigurationRequest
 import com.amazonaws.services.autoscaling.model.UpdateAutoScalingGroupRequest
@@ -66,7 +66,7 @@ class AutoScaleModifierTest extends Specification with Mockito with Hamcrest {
             there was one(mockSQSClient).deleteMessage(anyString, anyString)
             there were noCallsTo(mockASClient)
         }
-        "Can replace an instance of the same type in a different availability zone if the price is lower" in {
+        "Replace an instance of the same type in a different availability zone if the price is lower" in {
             mockAutoScalingDataMonitor.autoScalingGroups returns TrieMap[String, AutoScalingGroup]("stackName-systemASScalingGroupSpot-us-east-1a" -> autoScalingGroupA, "stackName-systemASScalingGroupSpot-us-east-1d" -> autoScalingGroupD);
             mockAutoScalingDataMonitor.launchConfigurations returns TrieMap[String, LaunchConfiguration]("stackName-systemASLaunchConfigurationSpot" -> new LaunchConfiguration().withLaunchConfigurationName("stackName-systemASLaunchConfigurationSpot"))
             mockAutoScalingDataMonitor.getAutoScalingGroupByAWSName(mockitoEq("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456")) returns Some(autoScalingGroupA)
@@ -75,11 +75,10 @@ class AutoScaleModifierTest extends Specification with Mockito with Hamcrest {
             autoScaleModifierSpy.monitorAutoScaleGroups
             there was one(mockAutoScalingDataMonitor).updateSingleAutoScalingGroup(mockitoEq("stackName-systemASScalingGroupSpot-us-east-1d"))
             there was one(mockAutoScalingDataMonitor).updateSingleAutoScalingGroup(mockitoEq("stackName-systemASScalingGroupSpot-us-east-1a"))
-            there was one(mockASClient).createLaunchConfiguration(argThat({ request: CreateLaunchConfigurationRequest => request.getLaunchConfigurationName == "stackName-systemASLaunchConfigurationSpot-m3.medium" }))
             there was one(mockASClient).updateAutoScalingGroup(argThat({ request: UpdateAutoScalingGroupRequest => request.getAutoScalingGroupName == "stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456" && request.getDesiredCapacity == 0 }))
             there was one(mockASClient).updateAutoScalingGroup(argThat({ request: UpdateAutoScalingGroupRequest => request.getAutoScalingGroupName == "stackName-systemASScalingGroupSpotuseast1d-ABCDEF123456" && request.getDesiredCapacity == 2 }))
         }
-        "Replaces an instance in the same availability zone if the prices everywhere else are higher" in {
+        "Replace an instance in the same availability zone if the prices everywhere else are higher" in {
             mockAutoScalingDataMonitor.autoScalingGroups returns TrieMap[String, AutoScalingGroup]("stackName-systemASScalingGroupSpot-us-east-1a" -> autoScalingGroupA, "stackName-systemASScalingGroupSpot-us-east-1d" -> autoScalingGroupD);
             mockAutoScalingDataMonitor.launchConfigurations returns TrieMap[String, LaunchConfiguration]("stackName-systemASLaunchConfigurationSpot" -> new LaunchConfiguration().withLaunchConfigurationName("stackName-systemASLaunchConfigurationSpot"))
             mockAutoScalingDataMonitor.getAutoScalingGroupByAWSName(mockitoEq("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456")) returns Some(autoScalingGroupA)
@@ -94,8 +93,16 @@ class AutoScaleModifierTest extends Specification with Mockito with Hamcrest {
             there was one(mockASClient).updateAutoScalingGroup(argThat({ request: UpdateAutoScalingGroupRequest => request.getAutoScalingGroupName == "stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456" && request.getDesiredCapacity == 2 }))
             there was one(mockASClient).updateAutoScalingGroup(argThat({ request: UpdateAutoScalingGroupRequest => request.getAutoScalingGroupName == "stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456" && request.getDesiredCapacity == 1 }))
         }
-        "Skips replacement if it cannot find the AWS group that needs replacements" in {
-            val autoScalingGroupA = new AutoScalingGroup().withAutoScalingGroupName("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456").withTags(stackTag, systemTag, groupTypeTag, preferredTypesTag, spotPriceTag, availabilityZoneATag).withDesiredCapacity(1).withMaxSize(2).withMinSize(0)
+        "Replace an instance with a different instance type if the average price is lower" in {
+            mockAutoScalingDataMonitor.autoScalingGroups returns TrieMap[String, AutoScalingGroup]("stackName-systemASScalingGroupSpot-us-east-1a" -> autoScalingGroupA, "stackName-systemASScalingGroupSpot-us-east-1d" -> autoScalingGroupD);
+            mockAutoScalingDataMonitor.launchConfigurations returns TrieMap[String, LaunchConfiguration]("stackName-systemASLaunchConfigurationSpot" -> new LaunchConfiguration().withLaunchConfigurationName("stackName-systemASLaunchConfigurationSpot").withInstanceType(M3Large.toString))
+            mockAutoScalingDataMonitor.getAutoScalingGroupByAWSName(mockitoEq("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456")) returns Some(autoScalingGroupA)
+            mockSQSClient.receiveMessage(any[ReceiveMessageRequest]) returns new ReceiveMessageResult().withMessages(createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage))
+            mockPriceMonitor.getWeightedPrices returns Map(M3Medium -> SpotPriceInfo(M3Medium, "us-east-1d", 0.10), M3Large -> SpotPriceInfo(M3Large, "us-east-1d", 0.20))
+            autoScaleModifierSpy.monitorAutoScaleGroups
+            there was one(mockASClient).updateAutoScalingGroup(argThat({ request: UpdateAutoScalingGroupRequest => request.getAutoScalingGroupName == "stackName-systemASScalingGroupSpotuseast1d-ABCDEF123456" && request.getLaunchConfigurationName == "stackName-systemASLaunchConfigurationSpot-m3.medium" }))
+        }
+        "Skip replacement if it cannot find the AWS group that needs replacements" in {
             mockAutoScalingDataMonitor.autoScalingGroups returns TrieMap[String, AutoScalingGroup]("stackName-systemASScalingGroupSpot-us-east-1a" -> autoScalingGroupA);
             mockAutoScalingDataMonitor.launchConfigurations returns TrieMap[String, LaunchConfiguration]("stackName-systemASLaunchConfigurationSpot" -> new LaunchConfiguration().withLaunchConfigurationName("stackName-systemASLaunchConfigurationSpot"))
             mockAutoScalingDataMonitor.getAutoScalingGroupByAWSName(mockitoEq("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456")) returns None
@@ -103,6 +110,49 @@ class AutoScaleModifierTest extends Specification with Mockito with Hamcrest {
             autoScaleModifierSpy.monitorAutoScaleGroups
             there were noCallsTo(mockASClient)
         }
+        "Throw an exception if the base launch configuration isn't found" in {
+            mockAutoScalingDataMonitor.autoScalingGroups returns TrieMap[String, AutoScalingGroup]("stackName-systemASScalingGroupSpot-us-east-1a" -> autoScalingGroupA);
+            mockAutoScalingDataMonitor.launchConfigurations returns TrieMap[String, LaunchConfiguration]("otherLaunchConfiguration" -> new LaunchConfiguration)
+            mockAutoScalingDataMonitor.getAutoScalingGroupByAWSName(mockitoEq("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456")) returns Some(autoScalingGroupA)
+            mockSQSClient.receiveMessage(any[ReceiveMessageRequest]) returns new ReceiveMessageResult().withMessages(createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage))
+            mockPriceMonitor.getWeightedPrices returns Map(M3Medium -> SpotPriceInfo(M3Medium, "us-east-1a", 0.10))
+            doAnswer({
+                request: Any => autoScalingGroupA.setDesiredCapacity((request.asInstanceOf[UpdateAutoScalingGroupRequest]).getDesiredCapacity)
+                }).when(mockASClient).updateAutoScalingGroup(any[UpdateAutoScalingGroupRequest])
+            autoScaleModifierSpy.monitorAutoScaleGroups should throwA[RuntimeException]
+        }
+        "Dynamically create a new launch configuration for a new instance type if it doesn't exist" in {
+            mockAutoScalingDataMonitor.autoScalingGroups returns TrieMap[String, AutoScalingGroup]("stackName-systemASScalingGroupSpot-us-east-1a" -> autoScalingGroupA, "stackName-systemASScalingGroupSpot-us-east-1d" -> autoScalingGroupD);
+            mockAutoScalingDataMonitor.launchConfigurations returns TrieMap[String, LaunchConfiguration]("stackName-systemASLaunchConfigurationSpot" -> new LaunchConfiguration().withLaunchConfigurationName("stackName-systemASLaunchConfigurationSpot"))
+            mockAutoScalingDataMonitor.getAutoScalingGroupByAWSName(mockitoEq("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456")) returns Some(autoScalingGroupA)
+            mockSQSClient.receiveMessage(any[ReceiveMessageRequest]) returns new ReceiveMessageResult().withMessages(createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage))
+            mockPriceMonitor.getWeightedPrices returns Map(M3Medium -> SpotPriceInfo(M3Medium, "us-east-1a", 0.10))
+            autoScaleModifierSpy.monitorAutoScaleGroups
+            there was one(mockASClient).createLaunchConfiguration(argThat({ request: CreateLaunchConfigurationRequest => request.getLaunchConfigurationName == "stackName-systemASLaunchConfigurationSpot-m3.medium" }))
+        }
+        "Not try to increase the desired capacity above the maximum size" in {
+            mockAutoScalingDataMonitor.autoScalingGroups returns TrieMap[String, AutoScalingGroup]("stackName-systemASScalingGroupSpot-us-east-1a" -> autoScalingGroupA, "stackName-systemASScalingGroupSpot-us-east-1d" -> autoScalingGroupD);
+            mockAutoScalingDataMonitor.launchConfigurations returns TrieMap[String, LaunchConfiguration]("stackName-systemASLaunchConfigurationSpot" -> new LaunchConfiguration().withLaunchConfigurationName("stackName-systemASLaunchConfigurationSpot"))
+            mockAutoScalingDataMonitor.getAutoScalingGroupByAWSName(mockitoEq("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456")) returns Some(autoScalingGroupA)
+            mockSQSClient.receiveMessage(any[ReceiveMessageRequest]) returns new ReceiveMessageResult().withMessages(createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage),
+                    createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage),
+                    createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage))
+            mockPriceMonitor.getWeightedPrices returns Map(M3Medium -> SpotPriceInfo(M3Medium, "us-east-1a", 0.10))
+            autoScaleModifierSpy.monitorAutoScaleGroups
+            there were no(mockASClient).updateAutoScalingGroup(argThat({request: UpdateAutoScalingGroupRequest => request.getDesiredCapacity > autoScalingGroupA.getMaxSize}))
+        }
+        "Not try to decrease the desired capacity below the minimum size" in {
+            mockAutoScalingDataMonitor.autoScalingGroups returns TrieMap[String, AutoScalingGroup]("stackName-systemASScalingGroupSpot-us-east-1a" -> autoScalingGroupA, "stackName-systemASScalingGroupSpot-us-east-1d" -> autoScalingGroupD);
+            mockAutoScalingDataMonitor.launchConfigurations returns TrieMap[String, LaunchConfiguration]("stackName-systemASLaunchConfigurationSpot" -> new LaunchConfiguration().withLaunchConfigurationName("stackName-systemASLaunchConfigurationSpot"))
+            mockAutoScalingDataMonitor.getAutoScalingGroupByAWSName(mockitoEq("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456")) returns Some(autoScalingGroupA)
+            mockSQSClient.receiveMessage(any[ReceiveMessageRequest]) returns new ReceiveMessageResult().withMessages(createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage),
+                    createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage),
+                    createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage))
+            mockPriceMonitor.getWeightedPrices returns Map(M3Medium -> SpotPriceInfo(M3Medium, "us-east-1a", 0.10))
+            autoScaleModifierSpy.monitorAutoScaleGroups
+            there were no(mockASClient).updateAutoScalingGroup(argThat({request: UpdateAutoScalingGroupRequest => request.getDesiredCapacity < autoScalingGroupA.getMinSize}))
+        }
+        
     }
     
     private def createMessage(autoScalingGroupName: String, terminationMessage: String): Message = {
