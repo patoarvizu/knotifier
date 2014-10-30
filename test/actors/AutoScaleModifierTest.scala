@@ -43,11 +43,14 @@ class AutoScaleModifierTest extends Specification with Mockito with Hamcrest {
     val autoScalingGroupA = new AutoScalingGroup().withAutoScalingGroupName("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456").withTags(tags :+ availabilityZoneATag).withDesiredCapacity(1).withMaxSize(2).withMinSize(0)
     val autoScalingGroupD = new AutoScalingGroup().withAutoScalingGroupName("stackName-systemASScalingGroupSpotuseast1d-ABCDEF123456").withTags(tags :+ availabilityZoneDTag).withDesiredCapacity(1).withMaxSize(2).withMinSize(0)
     val mockAutoScalingDataMonitor = mock[AutoScalingDataMonitor];
-    mockAutoScalingDataMonitor.autoScalingGroups returns new TrieMap[String, AutoScalingGroup];
-    mockAutoScalingDataMonitor.launchConfigurations returns new TrieMap[String, LaunchConfiguration];
+    mockAutoScalingDataMonitor.autoScalingGroups returns
+        TrieMap[String, AutoScalingGroup]("stackName-systemASScalingGroupSpot-us-east-1a" -> autoScalingGroupA, "stackName-systemASScalingGroupSpot-us-east-1d" -> autoScalingGroupD);
+    mockAutoScalingDataMonitor.launchConfigurations returns TrieMap[String, LaunchConfiguration]("stackName-systemASLaunchConfigurationSpot" -> new LaunchConfiguration().withLaunchConfigurationName("stackName-systemASLaunchConfigurationSpot"));
+    mockAutoScalingDataMonitor.getAutoScalingGroupByAWSName(mockitoEq("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456")) returns Some(autoScalingGroupA)
     
     val mockSQSClient: AmazonSQSAsyncClient = mock[AmazonSQSAsyncClient];
     mockSQSClient.createQueue(anyString) returns new CreateQueueResult().withQueueUrl("knotifierQueueUrl")
+    mockSQSClient.receiveMessage(any[ReceiveMessageRequest]) returns new ReceiveMessageResult().withMessages(createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage))
     
     val mockASClient: AmazonAutoScalingAsyncClient = mock[AmazonAutoScalingAsyncClient]
     
@@ -56,17 +59,14 @@ class AutoScaleModifierTest extends Specification with Mockito with Hamcrest {
     autoScaleModifierSpy.asClient returns mockASClient;
 
     "The auto scale modifier actor" should {
+        mockAutoScalingDataMonitor.autoScalingGroups returns new TrieMap[String, AutoScalingGroup];
+        mockAutoScalingDataMonitor.launchConfigurations returns new TrieMap[String, LaunchConfiguration];
         "Do nothing if either the launch configurations or auto scaling groups local cache is not available" in {
             autoScaleModifierSpy.monitorAutoScaleGroups
             there were noCallsTo(mockSQSClient)
         }
     }
     "The auto scale monitor" should {
-        mockAutoScalingDataMonitor.autoScalingGroups returns
-                TrieMap[String, AutoScalingGroup]("stackName-systemASScalingGroupSpot-us-east-1a" -> autoScalingGroupA, "stackName-systemASScalingGroupSpot-us-east-1d" -> autoScalingGroupD);
-        mockAutoScalingDataMonitor.launchConfigurations returns TrieMap[String, LaunchConfiguration]("stackName-systemASLaunchConfigurationSpot" -> new LaunchConfiguration().withLaunchConfigurationName("stackName-systemASLaunchConfigurationSpot"));
-        mockSQSClient.receiveMessage(any[ReceiveMessageRequest]) returns new ReceiveMessageResult().withMessages(createMessage("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456", AutoScaleModifier.AutoScalingInstanceTerminateMessage))
-        mockAutoScalingDataMonitor.getAutoScalingGroupByAWSName(mockitoEq("stackName-systemASScalingGroupSpotuseast1a-ABCDEF123456")) returns Some(autoScalingGroupA)
         "Not make any processing if the queue contains no messages" in {
             mockSQSClient.receiveMessage(any[ReceiveMessageRequest]) returns new ReceiveMessageResult()
             autoScaleModifierSpy.monitorAutoScaleGroups
