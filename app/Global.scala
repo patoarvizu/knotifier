@@ -23,9 +23,6 @@ object Global extends GlobalSettings {
         Akka.system.scheduler.schedule(0.seconds, 60.seconds) {
             wrapExceptionHandling(priceMonitor.monitorSpotPrices)
         }
-        Akka.system.scheduler.schedule(0.seconds, 15.seconds) {
-            wrapExceptionHandling(priceMonitor.printPrices)
-        }
         Akka.system.scheduler.schedule(0.seconds, 60.seconds) {
             wrapExceptionHandling(autoScalingDataMonitor.monitorAutoScalingData)
         }

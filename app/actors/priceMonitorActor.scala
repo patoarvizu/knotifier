@@ -54,14 +54,13 @@ class PriceMonitor extends AmazonClient {
         }
     }
 
-    def printPrices =
-    {
+    def getPricesInText: String = {
         val pricesStringBuilder:StringBuilder = new StringBuilder
         pricesStringBuilder.append(s"\n${new Date().toString}\n")
         lowestWeightedPrices.values foreach { spotPrice: SpotPriceInfo =>
             pricesStringBuilder.append(s" --- Price for instance type ${spotPrice.instanceType} in availability zone ${spotPrice.availabilityZone} is ${spotPrice.price}\n")
         }
         pricesStringBuilder.append("----------")
-        Logger.info(pricesStringBuilder.mkString)
+        pricesStringBuilder.mkString
     }
 }
