@@ -2,20 +2,18 @@ package util
 
 import java.util.ArrayList
 import java.util.Calendar
-
 import org.mockito.ArgumentMatcher
 import org.specs2.matcher.Hamcrest
 import org.specs2.matcher.ValueCheck.valueIsTypedValueCheck
 import org.specs2.mock.Mockito
 import org.specs2.mutable.Specification
-
 import com.amazonaws.services.ec2.AmazonEC2AsyncClient
 import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryRequest
 import com.amazonaws.services.ec2.model.DescribeSpotPriceHistoryResult
 import com.amazonaws.services.ec2.model.InstanceType
 import com.amazonaws.services.ec2.model.SpotPrice
-
 import org.mockito.Mockito.doReturn
+import com.amazonaws.AmazonServiceException
 
 class WeightedPriceCalculatorTest extends Specification with Mockito with Hamcrest {
     isolated
@@ -87,6 +85,12 @@ class WeightedPriceCalculatorTest extends Specification with Mockito with Hamcre
             doReturn(fakeSpotPriceHistoryResultLastThreeMonths).when(mockEC2Client).describeSpotPriceHistory(argThat(IsRequestOfLastThreeMonths))
             val weightedPrice = weightedPriceCalculator.getWeightedPrice(InstanceType.C3Large, "us-east-1a")
             weightedPrice mustEqual(0.1375)
+        }
+    }
+    "The calculator" should {
+        "Throw an exception if there's an error requesting the spot price history" in {
+            mockEC2Client.describeSpotPriceHistory(any[DescribeSpotPriceHistoryRequest]) throws new AmazonServiceException("Error")
+            weightedPriceCalculator.getWeightedPrice(InstanceType.C3Large, "us-east-1a") should throwAn[AmazonServiceException]
         }
     }
 }

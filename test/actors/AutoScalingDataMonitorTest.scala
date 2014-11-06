@@ -12,6 +12,8 @@ import com.amazonaws.services.autoscaling.model.LaunchConfiguration
 import com.amazonaws.services.autoscaling.model.DescribeLaunchConfigurationsRequest
 import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsRequest
 import com.amazonaws.services.autoscaling.model.TagDescription
+import com.amazonaws.AmazonServiceException
+import scala.concurrent.Future
 
 class AutoScalingDataMonitorTest extends Specification with Mockito {
     isolated
@@ -40,6 +42,17 @@ class AutoScalingDataMonitorTest extends Specification with Mockito {
         }
     }
     
+    "The auto scaling data monitor" should {
+        "Throw an exception if a call to the AWS auto scaling api fails while updating the auto scaling groups data" in {
+            mockASClient.describeAutoScalingGroups throws new AmazonServiceException("Error")
+            autoScalingDataMonitor.monitorAutoScalingData should throwAn[AmazonServiceException]
+        }
+        "Throw an exception if a call to the AWS auto scaling api fails while updating the launch configurations data" in {
+            mockASClient.describeLaunchConfigurations throws new AmazonServiceException("Error")
+            autoScalingDataMonitor.monitorAutoScalingData should throwAn[AmazonServiceException]
+        }
+    }
+
     "The auto scaling data monitor cache" should {
         autoScalingDataMonitor.clearAutoScalingData
         autoScalingDataMonitor.monitorAutoScalingData

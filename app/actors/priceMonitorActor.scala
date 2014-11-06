@@ -17,9 +17,10 @@ import util.WeightedPriceCalculator
 import util.AmazonClient
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.collection.mutable.StringBuilder
-
 import scala.collection.mutable.MutableList
 import PriceMonitor._
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 object PriceMonitor {
     private val lowestWeightedPrices: Map[InstanceType, SpotPriceInfo] = new TrieMap[InstanceType, SpotPriceInfo]
@@ -31,15 +32,13 @@ class PriceMonitor extends AmazonClient {
 
     private[actors] val weightedPriceCalculator: WeightedPriceCalculator = new WeightedPriceCalculator
 
-    def monitorSpotPrices: Iterable[Future[Unit]] = {
-        val futuresList: MutableList[Future[Unit]] = new MutableList[Future[Unit]]
+    def monitorSpotPrices = {
         for {
             instanceType <- instanceTypes
             availabilityZone <- availabilityZones
         } {
-            futuresList += (Future { setWeightedPrice(instanceType, availabilityZone) })
+            Await.result(Future { setWeightedPrice(instanceType, availabilityZone) }, Duration.Inf)
         }
-        futuresList
     }
 
     def getWeightedPrices: ImmutableMap[InstanceType, SpotPriceInfo] = new ImmutableHashMap[InstanceType, SpotPriceInfo]() ++ lowestWeightedPrices

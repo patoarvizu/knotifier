@@ -14,8 +14,10 @@ import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsRequest
 import com.amazonaws.services.autoscaling.model.DescribeLaunchConfigurationsRequest
 import util.NameHelper._
 import com.amazonaws.services.autoscaling.AmazonAutoScalingAsyncClient
-
 import util.NameHelper
+import play.Logger
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 object AutoScalingDataMonitor {
     val launchConfigurations: Map[String, LaunchConfiguration] = new TrieMap[String, LaunchConfiguration]
@@ -30,18 +32,10 @@ class AutoScalingDataMonitor extends AmazonClient {
     val autoScalingGroups = AutoScalingDataMonitor.autoScalingGroups
 
     def monitorAutoScalingData = {
-        val autoScalingGroupsFuture: Future[DescribeAutoScalingGroupsResult] = Future { asClient.describeAutoScalingGroups }
-        autoScalingGroupsFuture onSuccess {
-            case result: DescribeAutoScalingGroupsResult => {
-                result.getAutoScalingGroups foreach putAutoScalingGroupInMap
-            }
-        }
-        val launchConfigurationsFuture: Future[DescribeLaunchConfigurationsResult] = Future { asClient.describeLaunchConfigurations }
-        launchConfigurationsFuture onSuccess {
-            case result: DescribeLaunchConfigurationsResult => {
-                result.getLaunchConfigurations foreach putLaunchConfigurationInMap
-            }
-        }
+        val autoScalingGroupsFuture = Future { asClient.describeAutoScalingGroups.getAutoScalingGroups foreach putAutoScalingGroupInMap }
+        val launchConfigurationsFuture = Future { asClient.describeLaunchConfigurations.getLaunchConfigurations foreach putLaunchConfigurationInMap }
+        Await.result(autoScalingGroupsFuture, Duration.Inf)
+        Await.result(launchConfigurationsFuture, Duration.Inf)
     }
 
     def updateAutoScalingGroupsData = {

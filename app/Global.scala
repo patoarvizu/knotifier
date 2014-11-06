@@ -36,9 +36,9 @@ object Global extends GlobalSettings {
             action
         }
         catch {
-            case t:Throwable => {
-                Logger.error("Error running scheduled task", t)
-                throw t
+            case e:Exception => {
+                Logger.error("Error running scheduled task", e)
+                throw e
             }
         }
     }
