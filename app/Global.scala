@@ -35,7 +35,6 @@ object Global extends GlobalSettings {
         catch {
             case e:Exception => {
                 Logger.error("Error running scheduled task", e)
-                throw e
             }
         }
     }
