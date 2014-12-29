@@ -146,6 +146,7 @@ class AutoScaleModifier(autoScalingDataMonitor: AutoScalingDataMonitor, priceMon
         createLaunchConfigurationRequest.setInstanceType(s"$instanceType")
         createLaunchConfigurationRequest.setSpotPrice(replacementInfo.getTagValue(NameHelper.SpotPriceTag))
         createLaunchConfigurationRequest.setLaunchConfigurationName(nameHelper.getLaunchConfigurationNameWithInstanceType(replacementInfo.baseLaunchConfigurationName, s"$instanceType"))
+        createLaunchConfigurationRequest.setAssociatePublicIpAddress(launchConfiguration.getAssociatePublicIpAddress)
         createLaunchConfigurationRequest
     }
 }
